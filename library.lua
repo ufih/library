@@ -1,7 +1,7 @@
 --[[
     NexusLib - Drawing-Based UI Library
     Based on Splix/Linux/Deadcell style
-    Modern syntax, no legacy executor dependencies
+    Modern syntax, full executor compatibility
 ]]
 
 -- Services
@@ -11,7 +11,6 @@ local RunService = game:GetService("RunService")
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local Stats = game:GetService("Stats")
-local TweenService = game:GetService("TweenService")
 
 -- Library Variables
 local library = {
@@ -36,12 +35,14 @@ local library = {
     flags = {}
 }
 
--- Create folders
-for _, folder in pairs(library.folders) do
-    if not isfolder(folder) then
-        makefolder(folder)
+-- Create folders safely
+pcall(function()
+    for _, folder in pairs(library.folders) do
+        if not isfolder(folder) then
+            makefolder(folder)
+        end
     end
-end
+end)
 
 -- Theme
 local theme = {
@@ -53,7 +54,7 @@ local theme = {
     textcolor = Color3.fromRGB(255, 255, 255),
     textborder = Color3.fromRGB(0, 0, 0),
     cursoroutline = Color3.fromRGB(10, 10, 10),
-    font = Drawing.Fonts.Plex,
+    font = 2, -- Plex font enum
     textsize = 13
 }
 
@@ -93,93 +94,98 @@ function utility.Create(instanceType, instanceOffset, instanceProperties, instan
     local instanceHidden = false
     local instance = nil
 
-    if instanceType == "Frame" or instanceType == "frame" then
-        local frame = Drawing.new("Square")
-        frame.Visible = true
-        frame.Filled = true
-        frame.Thickness = 0
-        frame.Color = Color3.fromRGB(255, 255, 255)
-        frame.Size = Vector2.new(100, 100)
-        frame.Position = Vector2.new(0, 0)
-        frame.ZIndex = 1000
-        frame.Transparency = library.shared.initialized and 1 or 0
-        instance = frame
-    elseif instanceType == "TextLabel" or instanceType == "textlabel" then
-        local text = Drawing.new("Text")
-        text.Font = Drawing.Fonts.Plex
-        text.Visible = true
-        text.Outline = true
-        text.Center = false
-        text.Color = Color3.fromRGB(255, 255, 255)
-        text.ZIndex = 1000
-        text.Transparency = library.shared.initialized and 1 or 0
-        instance = text
-    elseif instanceType == "Triangle" or instanceType == "triangle" then
-        local tri = Drawing.new("Triangle")
-        tri.Visible = true
-        tri.Filled = true
-        tri.Thickness = 0
-        tri.Color = Color3.fromRGB(255, 255, 255)
-        tri.ZIndex = 1000
-        tri.Transparency = library.shared.initialized and 1 or 0
-        instance = tri
-    elseif instanceType == "Image" or instanceType == "image" then
-        local image = Drawing.new("Image")
-        image.Size = Vector2.new(12, 19)
-        image.Position = Vector2.new(0, 0)
-        image.Visible = true
-        image.ZIndex = 1000
-        image.Transparency = library.shared.initialized and 1 or 0
-        instance = image
-    elseif instanceType == "Circle" or instanceType == "circle" then
-        local circle = Drawing.new("Circle")
-        circle.Visible = false
-        circle.Color = Color3.fromRGB(255, 0, 0)
-        circle.Thickness = 1
-        circle.NumSides = 30
-        circle.Filled = true
-        circle.ZIndex = 1000
-        circle.Radius = 50
-        circle.Transparency = library.shared.initialized and 1 or 0
-        instance = circle
-    elseif instanceType == "Line" or instanceType == "line" then
-        local line = Drawing.new("Line")
-        line.Visible = false
-        line.Color = Color3.fromRGB(255, 255, 255)
-        line.Thickness = 1.5
-        line.ZIndex = 1000
-        line.Transparency = library.shared.initialized and 1 or 0
-        instance = line
+    local success, err = pcall(function()
+        if instanceType == "Frame" or instanceType == "frame" then
+            instance = Drawing.new("Square")
+            instance.Visible = true
+            instance.Filled = true
+            instance.Thickness = 0
+            instance.Color = Color3.fromRGB(255, 255, 255)
+            instance.Size = Vector2.new(100, 100)
+            instance.Position = Vector2.new(0, 0)
+            instance.ZIndex = 1000
+            instance.Transparency = library.shared.initialized and 1 or 0
+        elseif instanceType == "TextLabel" or instanceType == "textlabel" then
+            instance = Drawing.new("Text")
+            instance.Font = 2
+            instance.Visible = true
+            instance.Outline = true
+            instance.Center = false
+            instance.Color = Color3.fromRGB(255, 255, 255)
+            instance.Size = 13
+            instance.ZIndex = 1000
+            instance.Text = ""
+            instance.Transparency = library.shared.initialized and 1 or 0
+        elseif instanceType == "Triangle" or instanceType == "triangle" then
+            instance = Drawing.new("Triangle")
+            instance.Visible = true
+            instance.Filled = true
+            instance.Thickness = 0
+            instance.Color = Color3.fromRGB(255, 255, 255)
+            instance.ZIndex = 1000
+            instance.Transparency = library.shared.initialized and 1 or 0
+        elseif instanceType == "Image" or instanceType == "image" then
+            instance = Drawing.new("Image")
+            instance.Size = Vector2.new(12, 19)
+            instance.Position = Vector2.new(0, 0)
+            instance.Visible = true
+            instance.ZIndex = 1000
+            instance.Transparency = library.shared.initialized and 1 or 0
+        elseif instanceType == "Circle" or instanceType == "circle" then
+            instance = Drawing.new("Circle")
+            instance.Visible = false
+            instance.Color = Color3.fromRGB(255, 0, 0)
+            instance.Thickness = 1
+            instance.NumSides = 30
+            instance.Filled = true
+            instance.ZIndex = 1000
+            instance.Radius = 50
+            instance.Transparency = library.shared.initialized and 1 or 0
+        elseif instanceType == "Line" or instanceType == "line" then
+            instance = Drawing.new("Line")
+            instance.Visible = false
+            instance.Color = Color3.fromRGB(255, 255, 255)
+            instance.Thickness = 1.5
+            instance.ZIndex = 1000
+            instance.Transparency = library.shared.initialized and 1 or 0
+        end
+    end)
+
+    if not success or not instance then
+        warn("NexusLib: Failed to create drawing - " .. tostring(err))
+        return nil
     end
 
-    if instance then
-        for i, v in pairs(instanceProperties) do
-            if i == "Hidden" or i == "hidden" then
-                instanceHidden = v
-            else
+    -- Apply properties safely
+    for i, v in pairs(instanceProperties) do
+        if i == "Hidden" or i == "hidden" then
+            instanceHidden = v
+        else
+            pcall(function()
                 if library.shared.initialized then
                     instance[i] = v
                 elseif i ~= "Transparency" then
                     instance[i] = v
                 end
-            end
+            end)
         end
+    end
 
-        if not instanceHidden then
-            library.drawings[#library.drawings + 1] = {instance, instanceOffset, instanceProperties.Transparency or 1}
-        else
-            library.hidden[#library.hidden + 1] = {instance, instanceOffset, instanceProperties.Transparency or 1}
-        end
+    if not instanceHidden then
+        library.drawings[#library.drawings + 1] = {instance, instanceOffset, instanceProperties.Transparency or 1}
+    else
+        library.hidden[#library.hidden + 1] = {instance, instanceOffset, instanceProperties.Transparency or 1}
+    end
 
-        if instanceParent then
-            instanceParent[#instanceParent + 1] = instance
-        end
+    if instanceParent then
+        instanceParent[#instanceParent + 1] = instance
     end
 
     return instance
 end
 
 function utility.Remove(instance, hidden)
+    if not instance then return end
     library.colors[instance] = nil
     for i, v in pairs(hidden and library.hidden or library.drawings) do
         if v[1] == instance then
@@ -189,9 +195,9 @@ function utility.Remove(instance, hidden)
             break
         end
     end
-    if instance.__OBJECT_EXISTS then
+    pcall(function()
         instance:Remove()
-    end
+    end)
 end
 
 function utility.Connection(connectionType, connectionCallback)
@@ -204,7 +210,7 @@ function utility.Disconnect(connection)
     for i, v in pairs(library.connections) do
         if v == connection then
             library.connections[i] = nil
-            v:Disconnect()
+            pcall(function() v:Disconnect() end)
         end
     end
 end
@@ -215,14 +221,12 @@ end
 
 function utility.MouseOverDrawing(values, valuesAdd)
     valuesAdd = valuesAdd or {}
-    values = {
-        values[1] or 0 + (valuesAdd[1] or 0),
-        values[2] or 0 + (valuesAdd[2] or 0),
-        values[3] or 0 + (valuesAdd[3] or 0),
-        values[4] or 0 + (valuesAdd[4] or 0)
-    }
+    local v1 = (values[1] or 0) + (valuesAdd[1] or 0)
+    local v2 = (values[2] or 0) + (valuesAdd[2] or 0)
+    local v3 = (values[3] or 0) + (valuesAdd[3] or 0)
+    local v4 = (values[4] or 0) + (valuesAdd[4] or 0)
     local mouseLocation = utility.MouseLocation()
-    return mouseLocation.X >= values[1] and mouseLocation.X <= values[3] and mouseLocation.Y >= values[2] and mouseLocation.Y <= values[4]
+    return mouseLocation.X >= v1 and mouseLocation.X <= v3 and mouseLocation.Y >= v2 and mouseLocation.Y <= v4
 end
 
 function utility.GetTextBounds(text, textSize, font)
@@ -230,11 +234,13 @@ function utility.GetTextBounds(text, textSize, font)
     local textlabel = utility.Create("TextLabel", Vector2.new(0, 0), {
         Text = text,
         Size = textSize,
-        Font = font,
+        Font = font or 2,
         Hidden = true
     })
-    textbounds = textlabel.TextBounds
-    utility.Remove(textlabel, true)
+    if textlabel then
+        textbounds = textlabel.TextBounds
+        utility.Remove(textlabel, true)
+    end
     return textbounds
 end
 
@@ -243,49 +249,53 @@ function utility.GetScreenSize()
 end
 
 function utility.LoadImage(instance, imageName, imageLink)
+    if not instance then return end
     local data
-    if isfile(library.folders.assets .. "/" .. imageName .. ".png") then
-        data = readfile(library.folders.assets .. "/" .. imageName .. ".png")
-    else
-        if imageLink then
-            local success, result = pcall(function()
-                return game:HttpGet(imageLink)
-            end)
-            if success and result then
-                data = result
-                pcall(function()
-                    writefile(library.folders.assets .. "/" .. imageName .. ".png", data)
+    pcall(function()
+        if isfile(library.folders.assets .. "/" .. imageName .. ".png") then
+            data = readfile(library.folders.assets .. "/" .. imageName .. ".png")
+        else
+            if imageLink then
+                local success, result = pcall(function()
+                    return game:HttpGet(imageLink)
                 end)
+                if success and result then
+                    data = result
+                    pcall(function()
+                        writefile(library.folders.assets .. "/" .. imageName .. ".png", data)
+                    end)
+                end
             end
         end
-    end
-    if data and instance then
-        pcall(function()
+        if data then
             instance.Data = data
-        end)
-    end
+        end
+    end)
 end
 
 function utility.Lerp(instance, instanceTo, instanceTime)
+    if not instance then return end
     local currentTime = 0
     local currentIndex = {}
     local connection
 
     for i, v in pairs(instanceTo) do
-        currentIndex[i] = instance[i]
+        pcall(function()
+            currentIndex[i] = instance[i]
+        end)
     end
 
     local function lerp()
         for i, v in pairs(instanceTo) do
-            if instance.__OBJECT_EXISTS then
+            pcall(function()
                 if typeof(v) == "number" then
-                    instance[i] = currentIndex[i] + (v - currentIndex[i]) * (currentTime / instanceTime)
+                    instance[i] = currentIndex[i] + (v - currentIndex[i]) * math.min(currentTime / instanceTime, 1)
                 elseif typeof(v) == "Color3" then
-                    instance[i] = currentIndex[i]:Lerp(v, currentTime / instanceTime)
+                    instance[i] = currentIndex[i]:Lerp(v, math.min(currentTime / instanceTime, 1))
                 elseif typeof(v) == "Vector2" then
-                    instance[i] = currentIndex[i]:Lerp(v, currentTime / instanceTime)
+                    instance[i] = currentIndex[i]:Lerp(v, math.min(currentTime / instanceTime, 1))
                 end
-            end
+            end)
         end
     end
 
@@ -295,37 +305,22 @@ function utility.Lerp(instance, instanceTo, instanceTime)
             lerp()
         else
             for i, v in pairs(instanceTo) do
-                if instance.__OBJECT_EXISTS then
+                pcall(function()
                     instance[i] = v
-                end
+                end)
             end
             connection:Disconnect()
         end
     end)
 end
 
--- Debug Console
-local debugConsole = {
-    logs = {},
-    visible = false,
-    maxLogs = 50
-}
-
+-- Debug/Logging
 function library:Log(message, level)
     level = level or "INFO"
-    local timestamp = os.date("%H:%M:%S")
-    local logEntry = {
-        time = timestamp,
-        message = tostring(message),
-        level = level
-    }
-    table.insert(debugConsole.logs, 1, logEntry)
-    if #debugConsole.logs > debugConsole.maxLogs then
-        table.remove(debugConsole.logs)
-    end
+    print("[NexusLib][" .. level .. "] " .. tostring(message))
 end
 
--- Main Library Functions
+-- Main Library
 function library:New(info)
     info = info or {}
     local name = info.name or info.Name or info.title or info.Title or "NexusLib"
@@ -359,13 +354,13 @@ function library:New(info)
     window.mainframe = mainframe
     library.colors[mainframe] = {Color = "outline"}
 
-    -- Accent line
-    local frameinline = utility.Create("Frame", Vector2.new(1, 1), {mainframe}, {
+    -- Accent line at top
+    local accentline = utility.Create("Frame", Vector2.new(1, 1), {mainframe}, {
         Size = utility.Size(1, -2, 0, 2, mainframe),
         Position = utility.Position(0, 1, 0, 1, mainframe),
         Color = theme.accent
     })
-    library.colors[frameinline] = {Color = "accent"}
+    library.colors[accentline] = {Color = "accent"}
 
     -- Inner frame
     local innerframe = utility.Create("Frame", Vector2.new(1, 3), {mainframe}, {
@@ -375,8 +370,8 @@ function library:New(info)
     })
     library.colors[innerframe] = {Color = "lightcontrast"}
 
-    -- Title
-    local title = utility.Create("TextLabel", Vector2.new(8, 8), {innerframe}, {
+    -- Title text
+    local titletext = utility.Create("TextLabel", Vector2.new(8, 8), {innerframe}, {
         Text = name,
         Size = theme.textsize,
         Font = theme.font,
@@ -384,9 +379,9 @@ function library:New(info)
         OutlineColor = theme.textborder,
         Position = utility.Position(0, 8, 0, 6, innerframe)
     })
-    library.colors[title] = {OutlineColor = "textborder", Color = "textcolor"}
+    library.colors[titletext] = {OutlineColor = "textborder", Color = "textcolor"}
 
-    -- Tab holder outline
+    -- Tab holder (left side)
     local tabholderoutline = utility.Create("Frame", Vector2.new(8, 28), {innerframe}, {
         Size = utility.Size(0, 120, 1, -36, innerframe),
         Position = utility.Position(0, 8, 0, 28, innerframe),
@@ -394,7 +389,6 @@ function library:New(info)
     })
     library.colors[tabholderoutline] = {Color = "outline"}
 
-    -- Tab holder
     local tabholder = utility.Create("Frame", Vector2.new(1, 1), {tabholderoutline}, {
         Size = utility.Size(1, -2, 1, -2, tabholderoutline),
         Position = utility.Position(0, 1, 0, 1, tabholderoutline),
@@ -403,7 +397,7 @@ function library:New(info)
     library.colors[tabholder] = {Color = "darkcontrast"}
     window.tabholder = tabholder
 
-    -- Content holder outline
+    -- Content holder (right side)
     local contentholderoutline = utility.Create("Frame", Vector2.new(136, 28), {innerframe}, {
         Size = utility.Size(1, -144, 1, -36, innerframe),
         Position = utility.Position(0, 136, 0, 28, innerframe),
@@ -411,7 +405,6 @@ function library:New(info)
     })
     library.colors[contentholderoutline] = {Color = "outline"}
 
-    -- Content holder inline
     local contentholderinline = utility.Create("Frame", Vector2.new(1, 1), {contentholderoutline}, {
         Size = utility.Size(1, -2, 1, -2, contentholderoutline),
         Position = utility.Position(0, 1, 0, 1, contentholderoutline),
@@ -419,7 +412,6 @@ function library:New(info)
     })
     library.colors[contentholderinline] = {Color = "inline"}
 
-    -- Content holder
     local contentholder = utility.Create("Frame", Vector2.new(1, 1), {contentholderinline}, {
         Size = utility.Size(1, -2, 1, -2, contentholderinline),
         Position = utility.Position(0, 1, 0, 1, contentholderinline),
@@ -431,10 +423,14 @@ function library:New(info)
     -- Window functions
     function window:Move(vector)
         for i, v in pairs(library.drawings) do
-            if v[2][2] then
-                v[1].Position = utility.Position(0, v[2][1].X, 0, v[2][1].Y, v[2][2])
-            else
-                v[1].Position = utility.Position(0, vector.X + v[2].X, 0, vector.Y + v[2].Y)
+            if v[1] and v[2] then
+                pcall(function()
+                    if type(v[2]) == "table" and v[2][2] then
+                        v[1].Position = utility.Position(0, v[2][1].X, 0, v[2][1].Y, v[2][2])
+                    else
+                        v[1].Position = Vector2.new(vector.X + v[2].X, vector.Y + v[2].Y)
+                    end
+                end)
             end
         end
     end
@@ -459,43 +455,36 @@ function library:New(info)
             window.currentContent.frame = nil
             window.currentContent.colorpicker = nil
         elseif window.currentContent.keybind and window.currentContent.keybind.open then
-            local modemenu = window.currentContent.keybind.modemenu
             window.currentContent.keybind.open = false
-            for i, v in pairs(modemenu.drawings) do
-                utility.Remove(v)
-            end
-            modemenu.drawings = {}
             window.currentContent.frame = nil
             window.currentContent.keybind = nil
         end
     end
 
     function window:IsOverContent()
-        if window.currentContent.frame and utility.MouseOverDrawing({
-            window.currentContent.frame.Position.X,
-            window.currentContent.frame.Position.Y,
-            window.currentContent.frame.Position.X + window.currentContent.frame.Size.X,
-            window.currentContent.frame.Position.Y + window.currentContent.frame.Size.Y
-        }) then
-            return true
+        if window.currentContent.frame then
+            local success, result = pcall(function()
+                return utility.MouseOverDrawing({
+                    window.currentContent.frame.Position.X,
+                    window.currentContent.frame.Position.Y,
+                    window.currentContent.frame.Position.X + window.currentContent.frame.Size.X,
+                    window.currentContent.frame.Position.Y + window.currentContent.frame.Size.Y
+                })
+            end)
+            if success then return result end
         end
         return false
     end
 
     function window:Unload()
         for i, v in pairs(library.connections) do
-            v:Disconnect()
-            v = nil
+            pcall(function() v:Disconnect() end)
         end
         for i, v in next, library.hidden do
-            if v[1] and v[1].Remove and v[1].__OBJECT_EXISTS then
-                v[1]:Remove()
-            end
+            pcall(function() v[1]:Remove() end)
         end
         for i, v in pairs(library.drawings) do
-            if v[1] and v[1].__OBJECT_EXISTS then
-                v[1]:Remove()
-            end
+            pcall(function() v[1]:Remove() end)
         end
         library.drawings = {}
         library.hidden = {}
@@ -504,6 +493,7 @@ function library:New(info)
         library.ended = {}
         library.changed = {}
         UserInputService.MouseIconEnabled = true
+        library:Log("UI Unloaded", "INFO")
     end
 
     function window:Fade()
@@ -511,12 +501,16 @@ function library:New(info)
         window.isVisible = not window.isVisible
 
         for i, v in pairs(library.drawings) do
-            utility.Lerp(v[1], {Transparency = window.isVisible and v[3] or 0}, 0.25)
+            if v[1] then
+                utility.Lerp(v[1], {Transparency = window.isVisible and (v[3] or 1) or 0}, 0.2)
+            end
         end
 
         if window.cursor then
-            window.cursor.cursor.Transparency = window.isVisible and 1 or 0
-            window.cursor.cursorinline.Transparency = window.isVisible and 1 or 0
+            pcall(function()
+                window.cursor.cursor.Transparency = window.isVisible and 1 or 0
+                window.cursor.cursorinline.Transparency = window.isVisible and 1 or 0
+            end)
         end
 
         UserInputService.MouseIconEnabled = not window.isVisible
@@ -534,7 +528,6 @@ function library:New(info)
             Hidden = true
         })
         window.cursor.cursor = cursor
-        library.colors[cursor] = {Color = "cursoroutline"}
 
         local cursorinline = utility.Create("Triangle", nil, {
             Color = theme.accent,
@@ -544,16 +537,19 @@ function library:New(info)
             Hidden = true
         })
         window.cursor.cursorinline = cursorinline
-        library.colors[cursorinline] = {Color = "accent"}
 
         utility.Connection(RunService.RenderStepped, function()
-            local mouseLocation = utility.MouseLocation()
-            cursor.PointA = Vector2.new(mouseLocation.X, mouseLocation.Y)
-            cursor.PointB = Vector2.new(mouseLocation.X + 12, mouseLocation.Y + 4)
-            cursor.PointC = Vector2.new(mouseLocation.X + 4, mouseLocation.Y + 12)
-            cursorinline.PointA = Vector2.new(mouseLocation.X, mouseLocation.Y)
-            cursorinline.PointB = Vector2.new(mouseLocation.X + 12, mouseLocation.Y + 4)
-            cursorinline.PointC = Vector2.new(mouseLocation.X + 4, mouseLocation.Y + 12)
+            if cursor and cursorinline then
+                local mouseLocation = utility.MouseLocation()
+                pcall(function()
+                    cursor.PointA = Vector2.new(mouseLocation.X, mouseLocation.Y)
+                    cursor.PointB = Vector2.new(mouseLocation.X + 12, mouseLocation.Y + 4)
+                    cursor.PointC = Vector2.new(mouseLocation.X + 4, mouseLocation.Y + 12)
+                    cursorinline.PointA = Vector2.new(mouseLocation.X, mouseLocation.Y)
+                    cursorinline.PointB = Vector2.new(mouseLocation.X + 12, mouseLocation.Y + 4)
+                    cursorinline.PointC = Vector2.new(mouseLocation.X + 4, mouseLocation.Y + 12)
+                end)
+            end
         end)
 
         return window.cursor
@@ -564,48 +560,44 @@ function library:New(info)
         info = info or {}
         local watermarkname = info.name or info.Name or "NexusLib"
 
-        local textbounds = utility.GetTextBounds(watermarkname, theme.textsize, theme.font)
+        local textbounds = utility.GetTextBounds(watermarkname .. " | FPS: 000 | Ping: 000", theme.textsize, theme.font)
 
         local watermarkoutline = utility.Create("Frame", Vector2.new(10, 10), {
-            Size = utility.Size(0, textbounds.X + 80, 0, 21),
-            Position = utility.Position(0, 10, 0, 10),
+            Size = Vector2.new(textbounds.X + 16, 21),
+            Position = Vector2.new(10, 10),
             Hidden = true,
             ZIndex = 1010,
             Color = theme.outline,
             Visible = window.watermark.visible
         })
         window.watermark.outline = watermarkoutline
-        library.colors[watermarkoutline] = {Color = "outline"}
 
         local watermarkinline = utility.Create("Frame", Vector2.new(1, 1), {watermarkoutline}, {
-            Size = utility.Size(1, -2, 1, -2, watermarkoutline),
-            Position = utility.Position(0, 1, 0, 1, watermarkoutline),
+            Size = Vector2.new(textbounds.X + 14, 19),
+            Position = Vector2.new(11, 11),
             Hidden = true,
             ZIndex = 1010,
             Color = theme.inline,
             Visible = window.watermark.visible
         })
-        library.colors[watermarkinline] = {Color = "inline"}
 
         local watermarkframe = utility.Create("Frame", Vector2.new(1, 1), {watermarkinline}, {
-            Size = utility.Size(1, -2, 1, -2, watermarkinline),
-            Position = utility.Position(0, 1, 0, 1, watermarkinline),
+            Size = Vector2.new(textbounds.X + 12, 17),
+            Position = Vector2.new(12, 12),
             Hidden = true,
             ZIndex = 1010,
             Color = theme.lightcontrast,
             Visible = window.watermark.visible
         })
-        library.colors[watermarkframe] = {Color = "lightcontrast"}
 
         local watermarkaccent = utility.Create("Frame", Vector2.new(0, 0), {watermarkframe}, {
-            Size = utility.Size(1, 0, 0, 1, watermarkframe),
-            Position = utility.Position(0, 0, 0, 0, watermarkframe),
+            Size = Vector2.new(textbounds.X + 12, 1),
+            Position = Vector2.new(12, 12),
             Hidden = true,
-            ZIndex = 1010,
+            ZIndex = 1011,
             Color = theme.accent,
             Visible = window.watermark.visible
         })
-        library.colors[watermarkaccent] = {Color = "accent"}
 
         local watermarktitle = utility.Create("TextLabel", Vector2.new(6, 4), {watermarkoutline}, {
             Text = watermarkname .. " | FPS: 0 | Ping: 0",
@@ -614,52 +606,42 @@ function library:New(info)
             Color = theme.textcolor,
             OutlineColor = theme.textborder,
             Hidden = true,
-            ZIndex = 1010,
-            Position = utility.Position(0, 6, 0, 4, watermarkoutline),
+            ZIndex = 1012,
+            Position = Vector2.new(16, 14),
             Visible = window.watermark.visible
         })
-        library.colors[watermarktitle] = {OutlineColor = "textborder", Color = "textcolor"}
-
-        function window.watermark:UpdateSize()
-            watermarkoutline.Size = utility.Size(0, watermarktitle.TextBounds.X + 12, 0, 21)
-            watermarkinline.Size = utility.Size(1, -2, 1, -2, watermarkoutline)
-            watermarkframe.Size = utility.Size(1, -2, 1, -2, watermarkinline)
-            watermarkaccent.Size = utility.Size(1, 0, 0, 1, watermarkframe)
-        end
 
         function window.watermark:SetVisible(state)
             window.watermark.visible = state
-            watermarkoutline.Visible = state
-            watermarkinline.Visible = state
-            watermarkframe.Visible = state
-            watermarkaccent.Visible = state
-            watermarktitle.Visible = state
+            pcall(function()
+                watermarkoutline.Visible = state
+                watermarkinline.Visible = state
+                watermarkframe.Visible = state
+                watermarkaccent.Visible = state
+                watermarktitle.Visible = state
+            end)
         end
 
-        -- FPS counter
-        local lastTick = tick()
+        -- FPS/Ping updater
         local frameCount = 0
         task.spawn(function()
             while true do
+                library.shared.fps = frameCount
                 frameCount = 0
                 task.wait(1)
-                library.shared.fps = frameCount
             end
         end)
 
         utility.Connection(RunService.RenderStepped, function()
             frameCount = frameCount + 1
-            local ping = "?"
             pcall(function()
-                ping = tostring(math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue()))
-            end)
-            library.shared.ping = ping
-
-            if tick() - lastTick >= 0.5 then
+                local ping = "?"
+                pcall(function()
+                    ping = tostring(math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue()))
+                end)
+                library.shared.ping = ping
                 watermarktitle.Text = watermarkname .. " | FPS: " .. tostring(library.shared.fps) .. " | Ping: " .. tostring(library.shared.ping)
-                window.watermark:UpdateSize()
-                lastTick = tick()
-            end
+            end)
         end)
 
         return window.watermark
@@ -668,7 +650,7 @@ function library:New(info)
     -- Page creation
     function window:Page(info)
         info = info or {}
-        local pagename = info.name or info.Name or info.title or info.Title or "New Page"
+        local pagename = info.name or info.Name or info.title or info.Title or "Page"
 
         local page = {
             open = false,
@@ -682,27 +664,21 @@ function library:New(info)
             tabYOffset = tabYOffset + 22
         end
 
-        local textbounds = utility.GetTextBounds(pagename, theme.textsize, theme.font)
-
-        -- Tab button outline
+        -- Tab button
         local taboutline = utility.Create("Frame", Vector2.new(4, tabYOffset), {tabholder}, {
-            Size = utility.Size(1, -8, 0, 20, tabholder),
-            Position = utility.Position(0, 4, 0, tabYOffset, tabholder),
+            Size = Vector2.new(tabholder.Size.X - 8, 20),
+            Position = Vector2.new(tabholder.Position.X + 4, tabholder.Position.Y + tabYOffset),
             Color = theme.outline
         })
         page.taboutline = taboutline
-        library.colors[taboutline] = {Color = "outline"}
 
-        -- Tab button
         local tabbutton = utility.Create("Frame", Vector2.new(1, 1), {taboutline}, {
-            Size = utility.Size(1, -2, 1, -2, taboutline),
-            Position = utility.Position(0, 1, 0, 1, taboutline),
+            Size = Vector2.new(taboutline.Size.X - 2, 18),
+            Position = Vector2.new(taboutline.Position.X + 1, taboutline.Position.Y + 1),
             Color = theme.lightcontrast
         })
         page.tabbutton = tabbutton
-        library.colors[tabbutton] = {Color = "lightcontrast"}
 
-        -- Tab title
         local tabtitle = utility.Create("TextLabel", Vector2.new(0, 3), {taboutline}, {
             Text = pagename,
             Size = theme.textsize,
@@ -710,36 +686,33 @@ function library:New(info)
             Color = theme.textcolor,
             OutlineColor = theme.textborder,
             Center = true,
-            Position = utility.Position(0.5, 0, 0, 3, taboutline)
+            Position = Vector2.new(taboutline.Position.X + taboutline.Size.X/2, taboutline.Position.Y + 3)
         })
         page.tabtitle = tabtitle
-        library.colors[tabtitle] = {OutlineColor = "textborder", Color = "textcolor"}
 
-        -- Content frame (hidden by default)
+        -- Content area
         local contentframe = utility.Create("Frame", Vector2.new(4, 4), {contentholder}, {
-            Size = utility.Size(1, -8, 1, -8, contentholder),
-            Position = utility.Position(0, 4, 0, 4, contentholder),
+            Size = Vector2.new(contentholder.Size.X - 8, contentholder.Size.Y - 8),
+            Position = Vector2.new(contentholder.Position.X + 4, contentholder.Position.Y + 4),
             Color = theme.darkcontrast,
             Visible = false,
             Transparency = 0
         })
         page.contentframe = contentframe
-        library.colors[contentframe] = {Color = "darkcontrast"}
 
-        -- Left section holder
+        -- Section holders
         local leftsection = utility.Create("Frame", Vector2.new(0, 0), {contentframe}, {
-            Size = utility.Size(0.5, -4, 1, 0, contentframe),
-            Position = utility.Position(0, 0, 0, 0, contentframe),
+            Size = Vector2.new((contentframe.Size.X / 2) - 4, contentframe.Size.Y),
+            Position = Vector2.new(contentframe.Position.X, contentframe.Position.Y),
             Color = theme.darkcontrast,
             Visible = false,
             Transparency = 0
         })
         page.leftsection = leftsection
 
-        -- Right section holder  
         local rightsection = utility.Create("Frame", Vector2.new(0, 0), {contentframe}, {
-            Size = utility.Size(0.5, -4, 1, 0, contentframe),
-            Position = utility.Position(0.5, 4, 0, 0, contentframe),
+            Size = Vector2.new((contentframe.Size.X / 2) - 4, contentframe.Size.Y),
+            Position = Vector2.new(contentframe.Position.X + (contentframe.Size.X / 2) + 4, contentframe.Position.Y),
             Color = theme.darkcontrast,
             Visible = false,
             Transparency = 0
@@ -751,26 +724,20 @@ function library:New(info)
                 v.contentframe.Visible = false
                 v.leftsection.Visible = false
                 v.rightsection.Visible = false
-                v.tabbutton.Color = theme.lightcontrast
+                pcall(function() v.tabbutton.Color = theme.lightcontrast end)
                 for _, sec in pairs(v.sections) do
-                    sec:SetVisible(false)
+                    if sec.SetVisible then sec:SetVisible(false) end
                 end
             end
             page.open = true
             page.contentframe.Visible = true
             page.leftsection.Visible = true
             page.rightsection.Visible = true
-            page.tabbutton.Color = theme.darkcontrast
+            pcall(function() page.tabbutton.Color = theme.darkcontrast end)
             for _, sec in pairs(page.sections) do
-                sec:SetVisible(true)
+                if sec.SetVisible then sec:SetVisible(true) end
             end
             window.currentPage = page
-        end
-
-        function page:Update()
-            for _, sec in pairs(page.sections) do
-                sec:Update()
-            end
         end
 
         -- Section creation
@@ -789,58 +756,51 @@ function library:New(info)
             local sideHolder = sectionside == "left" and page.leftsection or page.rightsection
             local yOffset = sectionside == "left" and page.sectionOffset.left or page.sectionOffset.right
 
-            -- Section outline
+            -- Section frame
             local sectionoutline = utility.Create("Frame", Vector2.new(0, yOffset), {sideHolder}, {
-                Size = utility.Size(1, 0, 0, sectionsize, sideHolder),
-                Position = utility.Position(0, 0, 0, yOffset, sideHolder),
+                Size = Vector2.new(sideHolder.Size.X, sectionsize),
+                Position = Vector2.new(sideHolder.Position.X, sideHolder.Position.Y + yOffset),
                 Color = theme.outline,
                 Visible = page.open
             })
             section.sectionoutline = sectionoutline
-            library.colors[sectionoutline] = {Color = "outline"}
 
-            -- Section inline
             local sectioninline = utility.Create("Frame", Vector2.new(1, 1), {sectionoutline}, {
-                Size = utility.Size(1, -2, 1, -2, sectionoutline),
-                Position = utility.Position(0, 1, 0, 1, sectionoutline),
+                Size = Vector2.new(sectionoutline.Size.X - 2, sectionoutline.Size.Y - 2),
+                Position = Vector2.new(sectionoutline.Position.X + 1, sectionoutline.Position.Y + 1),
                 Color = theme.inline,
                 Visible = page.open
             })
-            library.colors[sectioninline] = {Color = "inline"}
 
-            -- Section frame
             local sectionframe = utility.Create("Frame", Vector2.new(1, 1), {sectioninline}, {
-                Size = utility.Size(1, -2, 1, -2, sectioninline),
-                Position = utility.Position(0, 1, 0, 1, sectioninline),
+                Size = Vector2.new(sectioninline.Size.X - 2, sectioninline.Size.Y - 2),
+                Position = Vector2.new(sectioninline.Position.X + 1, sectioninline.Position.Y + 1),
                 Color = theme.lightcontrast,
                 Visible = page.open
             })
             section.sectionframe = sectionframe
-            library.colors[sectionframe] = {Color = "lightcontrast"}
 
-            -- Section title background
+            -- Title background
+            local titlebgwidth = utility.GetTextBounds(sectionname, theme.textsize, theme.font).X + 6
             local titlebg = utility.Create("Frame", Vector2.new(8, -6), {sectionframe}, {
-                Size = utility.Size(0, utility.GetTextBounds(sectionname, theme.textsize, theme.font).X + 6, 0, 12, sectionframe),
-                Position = utility.Position(0, 8, 0, -6, sectionframe),
+                Size = Vector2.new(titlebgwidth, 12),
+                Position = Vector2.new(sectionframe.Position.X + 8, sectionframe.Position.Y - 6),
                 Color = theme.lightcontrast,
                 Visible = page.open
             })
-            library.colors[titlebg] = {Color = "lightcontrast"}
 
-            -- Section title
             local sectiontitle = utility.Create("TextLabel", Vector2.new(10, -4), {sectionframe}, {
                 Text = sectionname,
                 Size = theme.textsize,
                 Font = theme.font,
                 Color = theme.textcolor,
                 OutlineColor = theme.textborder,
-                Position = utility.Position(0, 11, 0, -4, sectionframe),
+                Position = Vector2.new(sectionframe.Position.X + 11, sectionframe.Position.Y - 4),
                 Visible = page.open
             })
             section.sectiontitle = sectiontitle
-            library.colors[sectiontitle] = {OutlineColor = "textborder", Color = "textcolor"}
 
-            -- Update section offset
+            -- Update offset
             if sectionside == "left" then
                 page.sectionOffset.left = page.sectionOffset.left + sectionsize + 8
             else
@@ -848,29 +808,21 @@ function library:New(info)
             end
 
             function section:SetVisible(state)
-                sectionoutline.Visible = state
-                sectioninline.Visible = state
-                sectionframe.Visible = state
-                titlebg.Visible = state
-                sectiontitle.Visible = state
+                pcall(function()
+                    sectionoutline.Visible = state
+                    sectioninline.Visible = state
+                    sectionframe.Visible = state
+                    titlebg.Visible = state
+                    sectiontitle.Visible = state
+                end)
                 for _, elem in pairs(section.elements) do
                     if elem.SetVisible then
-                        elem:SetVisible(state)
+                        pcall(function() elem:SetVisible(state) end)
                     end
                 end
             end
 
-            function section:Update()
-                local totalHeight = 16
-                for _, elem in pairs(section.elements) do
-                    if elem.GetHeight then
-                        totalHeight = totalHeight + elem:GetHeight() + 6
-                    end
-                end
-                sectionoutline.Size = utility.Size(1, 0, 0, math.max(totalHeight, 50), sideHolder)
-            end
-
-            -- Toggle element
+            -- Toggle
             function section:Toggle(info)
                 info = info or {}
                 local togglename = info.name or info.Name or "Toggle"
@@ -883,58 +835,38 @@ function library:New(info)
                     axis = section.elementOffset + 14
                 }
 
-                -- Toggle holder
-                local toggleholder = utility.Create("Frame", Vector2.new(8, toggle.axis), {sectionframe}, {
-                    Size = utility.Size(1, -16, 0, 14, sectionframe),
-                    Position = utility.Position(0, 8, 0, toggle.axis, sectionframe),
-                    Color = theme.lightcontrast,
-                    Visible = page.open,
-                    Transparency = 0
-                })
-                toggle.holder = toggleholder
-
-                -- Toggle box outline
-                local toggleoutline = utility.Create("Frame", Vector2.new(0, 1), {toggleholder}, {
-                    Size = utility.Size(0, 10, 0, 10),
-                    Position = utility.Position(0, 0, 0, 1, toggleholder),
+                -- Toggle elements
+                local toggleoutline = utility.Create("Frame", Vector2.new(8, toggle.axis), {sectionframe}, {
+                    Size = Vector2.new(10, 10),
+                    Position = Vector2.new(sectionframe.Position.X + 8, sectionframe.Position.Y + toggle.axis + 1),
                     Color = theme.outline,
                     Visible = page.open
                 })
-                library.colors[toggleoutline] = {Color = "outline"}
 
-                -- Toggle box
                 local togglebox = utility.Create("Frame", Vector2.new(1, 1), {toggleoutline}, {
-                    Size = utility.Size(1, -2, 1, -2, toggleoutline),
-                    Position = utility.Position(0, 1, 0, 1, toggleoutline),
+                    Size = Vector2.new(8, 8),
+                    Position = Vector2.new(toggleoutline.Position.X + 1, toggleoutline.Position.Y + 1),
                     Color = toggledefault and theme.accent or theme.darkcontrast,
                     Visible = page.open
                 })
                 toggle.box = togglebox
-                if not toggledefault then
-                    library.colors[togglebox] = {Color = "darkcontrast"}
-                end
 
-                -- Toggle title
-                local toggletitle = utility.Create("TextLabel", Vector2.new(16, 0), {toggleholder}, {
+                local toggletitle = utility.Create("TextLabel", Vector2.new(16, 0), {sectionframe}, {
                     Text = togglename,
                     Size = theme.textsize,
                     Font = theme.font,
                     Color = theme.textcolor,
                     OutlineColor = theme.textborder,
-                    Position = utility.Position(0, 16, 0, -1, toggleholder),
+                    Position = Vector2.new(sectionframe.Position.X + 24, sectionframe.Position.Y + toggle.axis - 1),
                     Visible = page.open
                 })
                 toggle.title = toggletitle
-                library.colors[toggletitle] = {OutlineColor = "textborder", Color = "textcolor"}
 
                 function toggle:Set(value)
                     toggle.value = value
-                    togglebox.Color = value and theme.accent or theme.darkcontrast
-                    if value then
-                        library.colors[togglebox] = nil
-                    else
-                        library.colors[togglebox] = {Color = "darkcontrast"}
-                    end
+                    pcall(function()
+                        togglebox.Color = value and theme.accent or theme.darkcontrast
+                    end)
                     if toggleflag then
                         library.flags[toggleflag] = value
                     end
@@ -946,31 +878,27 @@ function library:New(info)
                 end
 
                 function toggle:SetVisible(state)
-                    toggleholder.Visible = state
-                    toggleoutline.Visible = state
-                    togglebox.Visible = state
-                    toggletitle.Visible = state
+                    pcall(function()
+                        toggleoutline.Visible = state
+                        togglebox.Visible = state
+                        toggletitle.Visible = state
+                    end)
                 end
 
-                function toggle:GetHeight()
-                    return 14
-                end
-
-                -- Input handling
+                -- Click handler
                 library.began[#library.began + 1] = function(input)
-                    if input.UserInputType == Enum.UserInputType.MouseButton1 and window.isVisible and toggleholder.Visible then
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 and window.isVisible and toggleoutline.Visible then
                         if utility.MouseOverDrawing({
-                            toggleholder.Position.X,
-                            toggleholder.Position.Y,
-                            toggleholder.Position.X + toggleholder.Size.X,
-                            toggleholder.Position.Y + toggleholder.Size.Y
+                            sectionframe.Position.X + 8,
+                            sectionframe.Position.Y + toggle.axis,
+                            sectionframe.Position.X + sectionframe.Size.X - 8,
+                            sectionframe.Position.Y + toggle.axis + 14
                         }) and not window:IsOverContent() then
                             toggle:Set(not toggle.value)
                         end
                     end
                 end
 
-                -- Initialize
                 if toggleflag then
                     library.flags[toggleflag] = toggledefault
                     library.pointers[toggleflag] = toggle
@@ -984,7 +912,7 @@ function library:New(info)
                 return toggle
             end
 
-            -- Slider element
+            -- Slider
             function section:Slider(info)
                 info = info or {}
                 local slidername = info.name or info.Name or "Slider"
@@ -1001,71 +929,62 @@ function library:New(info)
                     dragging = false
                 }
 
-                -- Slider title
                 local slidertitle = utility.Create("TextLabel", Vector2.new(8, slider.axis), {sectionframe}, {
                     Text = slidername,
                     Size = theme.textsize,
                     Font = theme.font,
                     Color = theme.textcolor,
                     OutlineColor = theme.textborder,
-                    Position = utility.Position(0, 8, 0, slider.axis, sectionframe),
+                    Position = Vector2.new(sectionframe.Position.X + 8, sectionframe.Position.Y + slider.axis),
                     Visible = page.open
                 })
-                slider.title = slidertitle
-                library.colors[slidertitle] = {OutlineColor = "textborder", Color = "textcolor"}
 
-                -- Slider value text
                 local slidervalue = utility.Create("TextLabel", Vector2.new(0, slider.axis), {sectionframe}, {
                     Text = tostring(sliderdefault),
                     Size = theme.textsize,
                     Font = theme.font,
                     Color = theme.textcolor,
                     OutlineColor = theme.textborder,
-                    Position = utility.Position(1, -8 - utility.GetTextBounds(tostring(sliderdefault), theme.textsize, theme.font).X, 0, slider.axis, sectionframe),
+                    Position = Vector2.new(sectionframe.Position.X + sectionframe.Size.X - 8 - utility.GetTextBounds(tostring(sliderdefault), theme.textsize, theme.font).X, sectionframe.Position.Y + slider.axis),
                     Visible = page.open
                 })
                 slider.valuetext = slidervalue
-                library.colors[slidervalue] = {OutlineColor = "textborder", Color = "textcolor"}
 
-                -- Slider outline
                 local slideroutline = utility.Create("Frame", Vector2.new(8, slider.axis + 16), {sectionframe}, {
-                    Size = utility.Size(1, -16, 0, 12, sectionframe),
-                    Position = utility.Position(0, 8, 0, slider.axis + 16, sectionframe),
+                    Size = Vector2.new(sectionframe.Size.X - 16, 12),
+                    Position = Vector2.new(sectionframe.Position.X + 8, sectionframe.Position.Y + slider.axis + 16),
                     Color = theme.outline,
                     Visible = page.open
                 })
                 slider.outline = slideroutline
-                library.colors[slideroutline] = {Color = "outline"}
 
-                -- Slider background
                 local sliderbg = utility.Create("Frame", Vector2.new(1, 1), {slideroutline}, {
-                    Size = utility.Size(1, -2, 1, -2, slideroutline),
-                    Position = utility.Position(0, 1, 0, 1, slideroutline),
+                    Size = Vector2.new(slideroutline.Size.X - 2, 10),
+                    Position = Vector2.new(slideroutline.Position.X + 1, slideroutline.Position.Y + 1),
                     Color = theme.darkcontrast,
                     Visible = page.open
                 })
-                library.colors[sliderbg] = {Color = "darkcontrast"}
 
-                -- Slider fill
                 local percent = (sliderdefault - slidermin) / (slidermax - slidermin)
                 local sliderfill = utility.Create("Frame", Vector2.new(0, 0), {sliderbg}, {
-                    Size = utility.Size(percent, 0, 1, 0, sliderbg),
-                    Position = utility.Position(0, 0, 0, 0, sliderbg),
+                    Size = Vector2.new((sliderbg.Size.X) * percent, 10),
+                    Position = Vector2.new(sliderbg.Position.X, sliderbg.Position.Y),
                     Color = theme.accent,
                     Visible = page.open
                 })
                 slider.fill = sliderfill
-                library.colors[sliderfill] = {Color = "accent"}
 
                 function slider:Set(value)
                     value = math.clamp(value, slidermin, slidermax)
                     value = math.floor(value / sliderincrement + 0.5) * sliderincrement
                     slider.value = value
 
-                    local percent = (value - slidermin) / (slidermax - slidermin)
-                    sliderfill.Size = utility.Size(percent, 0, 1, 0, sliderbg)
-                    slidervalue.Text = tostring(value)
-                    slidervalue.Position = utility.Position(1, -8 - utility.GetTextBounds(tostring(value), theme.textsize, theme.font).X, 0, slider.axis, sectionframe)
+                    local pct = (value - slidermin) / (slidermax - slidermin)
+                    pcall(function()
+                        sliderfill.Size = Vector2.new((sliderbg.Size.X) * pct, 10)
+                        slidervalue.Text = tostring(value)
+                        slidervalue.Position = Vector2.new(sectionframe.Position.X + sectionframe.Size.X - 8 - utility.GetTextBounds(tostring(value), theme.textsize, theme.font).X, sectionframe.Position.Y + slider.axis)
+                    end)
 
                     if sliderflag then
                         library.flags[sliderflag] = value
@@ -1078,29 +997,26 @@ function library:New(info)
                 end
 
                 function slider:SetVisible(state)
-                    slidertitle.Visible = state
-                    slidervalue.Visible = state
-                    slideroutline.Visible = state
-                    sliderbg.Visible = state
-                    sliderfill.Visible = state
-                end
-
-                function slider:GetHeight()
-                    return 30
+                    pcall(function()
+                        slidertitle.Visible = state
+                        slidervalue.Visible = state
+                        slideroutline.Visible = state
+                        sliderbg.Visible = state
+                        sliderfill.Visible = state
+                    end)
                 end
 
                 function slider:Refresh()
                     if slider.dragging then
                         local mouseX = utility.MouseLocation().X
-                        local sliderX = slideroutline.Position.X
+                        local sliderX = slideroutline.Position.X + 1
                         local sliderWidth = slideroutline.Size.X - 2
-                        local percent = math.clamp((mouseX - sliderX - 1) / sliderWidth, 0, 1)
-                        local value = slidermin + (slidermax - slidermin) * percent
+                        local pct = math.clamp((mouseX - sliderX) / sliderWidth, 0, 1)
+                        local value = slidermin + (slidermax - slidermin) * pct
                         slider:Set(value)
                     end
                 end
 
-                -- Input handling
                 library.began[#library.began + 1] = function(input)
                     if input.UserInputType == Enum.UserInputType.MouseButton1 and window.isVisible and slideroutline.Visible then
                         if utility.MouseOverDrawing({
@@ -1127,7 +1043,6 @@ function library:New(info)
                     end
                 end
 
-                -- Initialize
                 if sliderflag then
                     library.flags[sliderflag] = sliderdefault
                     library.pointers[sliderflag] = slider
@@ -1138,7 +1053,7 @@ function library:New(info)
                 return slider
             end
 
-            -- Button element
+            -- Button
             function section:Button(info)
                 info = info or {}
                 local buttonname = info.name or info.Name or "Button"
@@ -1148,36 +1063,29 @@ function library:New(info)
                     axis = section.elementOffset + 14
                 }
 
-                -- Button outline
                 local buttonoutline = utility.Create("Frame", Vector2.new(8, button.axis), {sectionframe}, {
-                    Size = utility.Size(1, -16, 0, 18, sectionframe),
-                    Position = utility.Position(0, 8, 0, button.axis, sectionframe),
+                    Size = Vector2.new(sectionframe.Size.X - 16, 18),
+                    Position = Vector2.new(sectionframe.Position.X + 8, sectionframe.Position.Y + button.axis),
                     Color = theme.outline,
                     Visible = page.open
                 })
                 button.outline = buttonoutline
-                library.colors[buttonoutline] = {Color = "outline"}
 
-                -- Button inline
                 local buttoninline = utility.Create("Frame", Vector2.new(1, 1), {buttonoutline}, {
-                    Size = utility.Size(1, -2, 1, -2, buttonoutline),
-                    Position = utility.Position(0, 1, 0, 1, buttonoutline),
+                    Size = Vector2.new(buttonoutline.Size.X - 2, 16),
+                    Position = Vector2.new(buttonoutline.Position.X + 1, buttonoutline.Position.Y + 1),
                     Color = theme.inline,
                     Visible = page.open
                 })
-                library.colors[buttoninline] = {Color = "inline"}
 
-                -- Button background
                 local buttonbg = utility.Create("Frame", Vector2.new(1, 1), {buttoninline}, {
-                    Size = utility.Size(1, -2, 1, -2, buttoninline),
-                    Position = utility.Position(0, 1, 0, 1, buttoninline),
+                    Size = Vector2.new(buttoninline.Size.X - 2, 14),
+                    Position = Vector2.new(buttoninline.Position.X + 1, buttoninline.Position.Y + 1),
                     Color = theme.lightcontrast,
                     Visible = page.open
                 })
                 button.bg = buttonbg
-                library.colors[buttonbg] = {Color = "lightcontrast"}
 
-                -- Button title
                 local buttontitle = utility.Create("TextLabel", Vector2.new(0, 2), {buttonoutline}, {
                     Text = buttonname,
                     Size = theme.textsize,
@@ -1185,24 +1093,19 @@ function library:New(info)
                     Color = theme.textcolor,
                     OutlineColor = theme.textborder,
                     Center = true,
-                    Position = utility.Position(0.5, 0, 0, 2, buttonoutline),
+                    Position = Vector2.new(buttonoutline.Position.X + buttonoutline.Size.X/2, buttonoutline.Position.Y + 2),
                     Visible = page.open
                 })
-                button.title = buttontitle
-                library.colors[buttontitle] = {OutlineColor = "textborder", Color = "textcolor"}
 
                 function button:SetVisible(state)
-                    buttonoutline.Visible = state
-                    buttoninline.Visible = state
-                    buttonbg.Visible = state
-                    buttontitle.Visible = state
+                    pcall(function()
+                        buttonoutline.Visible = state
+                        buttoninline.Visible = state
+                        buttonbg.Visible = state
+                        buttontitle.Visible = state
+                    end)
                 end
 
-                function button:GetHeight()
-                    return 18
-                end
-
-                -- Input handling
                 library.began[#library.began + 1] = function(input)
                     if input.UserInputType == Enum.UserInputType.MouseButton1 and window.isVisible and buttonoutline.Visible then
                         if utility.MouseOverDrawing({
@@ -1211,12 +1114,10 @@ function library:New(info)
                             buttonoutline.Position.X + buttonoutline.Size.X,
                             buttonoutline.Position.Y + buttonoutline.Size.Y
                         }) and not window:IsOverContent() then
-                            buttonbg.Color = theme.darkcontrast
+                            pcall(function() buttonbg.Color = theme.darkcontrast end)
                             pcall(buttoncallback)
                             task.delay(0.1, function()
-                                if buttonbg.__OBJECT_EXISTS then
-                                    buttonbg.Color = theme.lightcontrast
-                                end
+                                pcall(function() buttonbg.Color = theme.lightcontrast end)
                             end)
                         end
                     end
@@ -1227,102 +1128,7 @@ function library:New(info)
                 return button
             end
 
-            -- Textbox element
-            function section:Textbox(info)
-                info = info or {}
-                local textboxname = info.name or info.Name or "Textbox"
-                local textboxdefault = info.default or info.Default or ""
-                local textboxplaceholder = info.placeholder or info.Placeholder or "Enter text..."
-                local textboxflag = info.flag or info.Flag or info.pointer or info.Pointer
-                local textboxcallback = info.callback or info.Callback or function() end
-
-                local textbox = {
-                    value = textboxdefault,
-                    axis = section.elementOffset + 14,
-                    focused = false
-                }
-
-                -- Textbox title
-                local textboxtitle = utility.Create("TextLabel", Vector2.new(8, textbox.axis), {sectionframe}, {
-                    Text = textboxname,
-                    Size = theme.textsize,
-                    Font = theme.font,
-                    Color = theme.textcolor,
-                    OutlineColor = theme.textborder,
-                    Position = utility.Position(0, 8, 0, textbox.axis, sectionframe),
-                    Visible = page.open
-                })
-                textbox.title = textboxtitle
-                library.colors[textboxtitle] = {OutlineColor = "textborder", Color = "textcolor"}
-
-                -- Textbox outline
-                local textboxoutline = utility.Create("Frame", Vector2.new(8, textbox.axis + 16), {sectionframe}, {
-                    Size = utility.Size(1, -16, 0, 18, sectionframe),
-                    Position = utility.Position(0, 8, 0, textbox.axis + 16, sectionframe),
-                    Color = theme.outline,
-                    Visible = page.open
-                })
-                textbox.outline = textboxoutline
-                library.colors[textboxoutline] = {Color = "outline"}
-
-                -- Textbox background
-                local textboxbg = utility.Create("Frame", Vector2.new(1, 1), {textboxoutline}, {
-                    Size = utility.Size(1, -2, 1, -2, textboxoutline),
-                    Position = utility.Position(0, 1, 0, 1, textboxoutline),
-                    Color = theme.darkcontrast,
-                    Visible = page.open
-                })
-                library.colors[textboxbg] = {Color = "darkcontrast"}
-
-                -- Textbox text
-                local textboxtext = utility.Create("TextLabel", Vector2.new(4, 2), {textboxoutline}, {
-                    Text = textboxdefault ~= "" and textboxdefault or textboxplaceholder,
-                    Size = theme.textsize,
-                    Font = theme.font,
-                    Color = textboxdefault ~= "" and theme.textcolor or Color3.fromRGB(150, 150, 150),
-                    OutlineColor = theme.textborder,
-                    Position = utility.Position(0, 4, 0, 2, textboxoutline),
-                    Visible = page.open
-                })
-                textbox.text = textboxtext
-
-                function textbox:Set(value)
-                    textbox.value = value
-                    textboxtext.Text = value ~= "" and value or textboxplaceholder
-                    textboxtext.Color = value ~= "" and theme.textcolor or Color3.fromRGB(150, 150, 150)
-                    if textboxflag then
-                        library.flags[textboxflag] = value
-                    end
-                    pcall(textboxcallback, value)
-                end
-
-                function textbox:Get()
-                    return textbox.value
-                end
-
-                function textbox:SetVisible(state)
-                    textboxtitle.Visible = state
-                    textboxoutline.Visible = state
-                    textboxbg.Visible = state
-                    textboxtext.Visible = state
-                end
-
-                function textbox:GetHeight()
-                    return 36
-                end
-
-                -- Initialize
-                if textboxflag then
-                    library.flags[textboxflag] = textboxdefault
-                    library.pointers[textboxflag] = textbox
-                end
-
-                section.elementOffset = section.elementOffset + 42
-                section.elements[#section.elements + 1] = textbox
-                return textbox
-            end
-
-            -- Dropdown element
+            -- Dropdown
             function section:Dropdown(info)
                 info = info or {}
                 local dropdownname = info.name or info.Name or "Dropdown"
@@ -1339,75 +1145,62 @@ function library:New(info)
                     holder = {drawings = {}, buttons = {}}
                 }
 
-                -- Dropdown title
                 local dropdowntitle = utility.Create("TextLabel", Vector2.new(8, dropdown.axis), {sectionframe}, {
                     Text = dropdownname,
                     Size = theme.textsize,
                     Font = theme.font,
                     Color = theme.textcolor,
                     OutlineColor = theme.textborder,
-                    Position = utility.Position(0, 8, 0, dropdown.axis, sectionframe),
+                    Position = Vector2.new(sectionframe.Position.X + 8, sectionframe.Position.Y + dropdown.axis),
                     Visible = page.open
                 })
-                dropdown.title = dropdowntitle
-                library.colors[dropdowntitle] = {OutlineColor = "textborder", Color = "textcolor"}
 
-                -- Dropdown outline
                 local dropdownoutline = utility.Create("Frame", Vector2.new(8, dropdown.axis + 16), {sectionframe}, {
-                    Size = utility.Size(1, -16, 0, 18, sectionframe),
-                    Position = utility.Position(0, 8, 0, dropdown.axis + 16, sectionframe),
+                    Size = Vector2.new(sectionframe.Size.X - 16, 18),
+                    Position = Vector2.new(sectionframe.Position.X + 8, sectionframe.Position.Y + dropdown.axis + 16),
                     Color = theme.outline,
                     Visible = page.open
                 })
                 dropdown.outline = dropdownoutline
-                library.colors[dropdownoutline] = {Color = "outline"}
 
-                -- Dropdown inline
                 local dropdowninline = utility.Create("Frame", Vector2.new(1, 1), {dropdownoutline}, {
-                    Size = utility.Size(1, -2, 1, -2, dropdownoutline),
-                    Position = utility.Position(0, 1, 0, 1, dropdownoutline),
+                    Size = Vector2.new(dropdownoutline.Size.X - 2, 16),
+                    Position = Vector2.new(dropdownoutline.Position.X + 1, dropdownoutline.Position.Y + 1),
                     Color = theme.inline,
                     Visible = page.open
                 })
-                library.colors[dropdowninline] = {Color = "inline"}
 
-                -- Dropdown background
                 local dropdownbg = utility.Create("Frame", Vector2.new(1, 1), {dropdowninline}, {
-                    Size = utility.Size(1, -2, 1, -2, dropdowninline),
-                    Position = utility.Position(0, 1, 0, 1, dropdowninline),
+                    Size = Vector2.new(dropdowninline.Size.X - 2, 14),
+                    Position = Vector2.new(dropdowninline.Position.X + 1, dropdowninline.Position.Y + 1),
                     Color = theme.lightcontrast,
                     Visible = page.open
                 })
-                library.colors[dropdownbg] = {Color = "lightcontrast"}
 
-                -- Dropdown text
                 local dropdowntext = utility.Create("TextLabel", Vector2.new(4, 2), {dropdownoutline}, {
                     Text = dropdowndefault,
                     Size = theme.textsize,
                     Font = theme.font,
                     Color = theme.textcolor,
                     OutlineColor = theme.textborder,
-                    Position = utility.Position(0, 4, 0, 2, dropdownoutline),
+                    Position = Vector2.new(dropdownoutline.Position.X + 4, dropdownoutline.Position.Y + 2),
                     Visible = page.open
                 })
                 dropdown.text = dropdowntext
-                library.colors[dropdowntext] = {OutlineColor = "textborder", Color = "textcolor"}
 
-                -- Arrow indicator
                 local dropdownarrow = utility.Create("TextLabel", Vector2.new(0, 2), {dropdownoutline}, {
                     Text = "v",
                     Size = theme.textsize,
                     Font = theme.font,
                     Color = theme.textcolor,
                     OutlineColor = theme.textborder,
-                    Position = utility.Position(1, -12, 0, 2, dropdownoutline),
+                    Position = Vector2.new(dropdownoutline.Position.X + dropdownoutline.Size.X - 12, dropdownoutline.Position.Y + 2),
                     Visible = page.open
                 })
-                library.colors[dropdownarrow] = {OutlineColor = "textborder", Color = "textcolor"}
 
                 function dropdown:Set(value)
                     dropdown.value = value
-                    dropdowntext.Text = value
+                    pcall(function() dropdowntext.Text = value end)
                     if dropdownflag then
                         library.flags[dropdownflag] = value
                     end
@@ -1419,16 +1212,14 @@ function library:New(info)
                 end
 
                 function dropdown:SetVisible(state)
-                    dropdowntitle.Visible = state
-                    dropdownoutline.Visible = state
-                    dropdowninline.Visible = state
-                    dropdownbg.Visible = state
-                    dropdowntext.Visible = state
-                    dropdownarrow.Visible = state
-                end
-
-                function dropdown:GetHeight()
-                    return 36
+                    pcall(function()
+                        dropdowntitle.Visible = state
+                        dropdownoutline.Visible = state
+                        dropdowninline.Visible = state
+                        dropdownbg.Visible = state
+                        dropdowntext.Visible = state
+                        dropdownarrow.Visible = state
+                    end)
                 end
 
                 function dropdown:OpenDropdown()
@@ -1438,6 +1229,7 @@ function library:New(info)
                             utility.Remove(v)
                         end
                         dropdown.holder.drawings = {}
+                        dropdown.holder.buttons = {}
                         window.currentContent.frame = nil
                         window.currentContent.dropdown = nil
                         return
@@ -1448,20 +1240,18 @@ function library:New(info)
 
                     local listHeight = math.min(#dropdown.items * 16 + 4, 150)
 
-                    -- List outline
                     local listoutline = utility.Create("Frame", Vector2.new(0, 18), {dropdownoutline}, {
-                        Size = utility.Size(1, 0, 0, listHeight, dropdownoutline),
-                        Position = utility.Position(0, 0, 1, 2, dropdownoutline),
+                        Size = Vector2.new(dropdownoutline.Size.X, listHeight),
+                        Position = Vector2.new(dropdownoutline.Position.X, dropdownoutline.Position.Y + 20),
                         Color = theme.outline,
                         ZIndex = 1500,
                         Visible = true
                     })
                     dropdown.holder.drawings[#dropdown.holder.drawings + 1] = listoutline
 
-                    -- List background
                     local listbg = utility.Create("Frame", Vector2.new(1, 1), {listoutline}, {
-                        Size = utility.Size(1, -2, 1, -2, listoutline),
-                        Position = utility.Position(0, 1, 0, 1, listoutline),
+                        Size = Vector2.new(listoutline.Size.X - 2, listoutline.Size.Y - 2),
+                        Position = Vector2.new(listoutline.Position.X + 1, listoutline.Position.Y + 1),
                         Color = theme.darkcontrast,
                         ZIndex = 1500,
                         Visible = true
@@ -1471,7 +1261,6 @@ function library:New(info)
                     window.currentContent.frame = listoutline
                     window.currentContent.dropdown = dropdown
 
-                    -- Create list items
                     for i, item in ipairs(dropdown.items) do
                         local itemY = (i - 1) * 16 + 2
                         local itemtext = utility.Create("TextLabel", Vector2.new(4, itemY), {listbg}, {
@@ -1480,16 +1269,15 @@ function library:New(info)
                             Font = theme.font,
                             Color = item == dropdown.value and theme.accent or theme.textcolor,
                             OutlineColor = theme.textborder,
-                            Position = utility.Position(0, 4, 0, itemY, listbg),
+                            Position = Vector2.new(listbg.Position.X + 4, listbg.Position.Y + itemY),
                             ZIndex = 1501,
                             Visible = true
                         })
                         dropdown.holder.drawings[#dropdown.holder.drawings + 1] = itemtext
-                        dropdown.holder.buttons[item] = itemtext
+                        dropdown.holder.buttons[item] = {text = itemtext, y = itemY}
                     end
                 end
 
-                -- Input handling
                 library.began[#library.began + 1] = function(input)
                     if input.UserInputType == Enum.UserInputType.MouseButton1 and window.isVisible and dropdownoutline.Visible then
                         if utility.MouseOverDrawing({
@@ -1506,27 +1294,25 @@ function library:New(info)
                                 window.currentContent.frame.Position.X + window.currentContent.frame.Size.X,
                                 window.currentContent.frame.Position.Y + window.currentContent.frame.Size.Y
                             }) then
-                                -- Check which item was clicked
-                                for item, textobj in pairs(dropdown.holder.buttons) do
+                                for item, data in pairs(dropdown.holder.buttons) do
                                     if utility.MouseOverDrawing({
-                                        textobj.Position.X - 4,
-                                        textobj.Position.Y,
-                                        textobj.Position.X + window.currentContent.frame.Size.X - 4,
-                                        textobj.Position.Y + 16
+                                        window.currentContent.frame.Position.X,
+                                        window.currentContent.frame.Position.Y + data.y,
+                                        window.currentContent.frame.Position.X + window.currentContent.frame.Size.X,
+                                        window.currentContent.frame.Position.Y + data.y + 16
                                     }) then
                                         dropdown:Set(item)
-                                        dropdown:OpenDropdown() -- Close
+                                        dropdown:OpenDropdown()
                                         break
                                     end
                                 end
                             else
-                                dropdown:OpenDropdown() -- Close
+                                dropdown:OpenDropdown()
                             end
                         end
                     end
                 end
 
-                -- Initialize
                 if dropdownflag then
                     library.flags[dropdownflag] = dropdowndefault
                     library.pointers[dropdownflag] = dropdown
@@ -1540,7 +1326,7 @@ function library:New(info)
                 return dropdown
             end
 
-            -- Keybind element
+            -- Keybind
             function section:Keybind(info)
                 info = info or {}
                 local keybindname = info.name or info.Name or "Keybind"
@@ -1555,67 +1341,53 @@ function library:New(info)
                 }
 
                 local keyNames = {
-                    [Enum.KeyCode.LeftShift] = "LShift",
-                    [Enum.KeyCode.RightShift] = "RShift",
-                    [Enum.KeyCode.LeftControl] = "LCtrl",
-                    [Enum.KeyCode.RightControl] = "RCtrl",
-                    [Enum.KeyCode.LeftAlt] = "LAlt",
-                    [Enum.KeyCode.RightAlt] = "RAlt",
-                    [Enum.UserInputType.MouseButton1] = "MB1",
-                    [Enum.UserInputType.MouseButton2] = "MB2",
-                    [Enum.UserInputType.MouseButton3] = "MB3"
+                    [Enum.KeyCode.LeftShift] = "LS",
+                    [Enum.KeyCode.RightShift] = "RS",
+                    [Enum.KeyCode.LeftControl] = "LC",
+                    [Enum.KeyCode.RightControl] = "RC",
+                    [Enum.KeyCode.LeftAlt] = "LA",
+                    [Enum.KeyCode.RightAlt] = "RA",
+                    [Enum.UserInputType.MouseButton1] = "M1",
+                    [Enum.UserInputType.MouseButton2] = "M2",
+                    [Enum.UserInputType.MouseButton3] = "M3"
                 }
 
                 local function getKeyName(key)
-                    if keyNames[key] then
-                        return keyNames[key]
-                    elseif typeof(key) == "EnumItem" then
-                        return key.Name
-                    end
+                    if keyNames[key] then return keyNames[key] end
+                    if typeof(key) == "EnumItem" then return key.Name end
                     return "None"
                 end
 
-                -- Keybind holder
-                local keybindholder = utility.Create("Frame", Vector2.new(8, keybind.axis), {sectionframe}, {
-                    Size = utility.Size(1, -16, 0, 14, sectionframe),
-                    Position = utility.Position(0, 8, 0, keybind.axis, sectionframe),
-                    Color = theme.lightcontrast,
-                    Visible = page.open,
-                    Transparency = 0
-                })
-                keybind.holder = keybindholder
-
-                -- Keybind title
-                local keybindtitle = utility.Create("TextLabel", Vector2.new(0, 0), {keybindholder}, {
+                local keybindtitle = utility.Create("TextLabel", Vector2.new(8, keybind.axis), {sectionframe}, {
                     Text = keybindname,
                     Size = theme.textsize,
                     Font = theme.font,
                     Color = theme.textcolor,
                     OutlineColor = theme.textborder,
-                    Position = utility.Position(0, 0, 0, -1, keybindholder),
+                    Position = Vector2.new(sectionframe.Position.X + 8, sectionframe.Position.Y + keybind.axis - 1),
                     Visible = page.open
                 })
                 keybind.title = keybindtitle
-                library.colors[keybindtitle] = {OutlineColor = "textborder", Color = "textcolor"}
 
-                -- Keybind value
-                local keybindvalue = utility.Create("TextLabel", Vector2.new(0, 0), {keybindholder}, {
-                    Text = "[" .. getKeyName(keybinddefault) .. "]",
+                local keyText = "[" .. getKeyName(keybinddefault) .. "]"
+                local keybindvalue = utility.Create("TextLabel", Vector2.new(0, keybind.axis), {sectionframe}, {
+                    Text = keyText,
                     Size = theme.textsize,
                     Font = theme.font,
                     Color = theme.textcolor,
                     OutlineColor = theme.textborder,
-                    Position = utility.Position(1, -utility.GetTextBounds("[" .. getKeyName(keybinddefault) .. "]", theme.textsize, theme.font).X, 0, -1, keybindholder),
+                    Position = Vector2.new(sectionframe.Position.X + sectionframe.Size.X - 8 - utility.GetTextBounds(keyText, theme.textsize, theme.font).X, sectionframe.Position.Y + keybind.axis - 1),
                     Visible = page.open
                 })
                 keybind.valuetext = keybindvalue
-                library.colors[keybindvalue] = {OutlineColor = "textborder", Color = "textcolor"}
 
                 function keybind:Set(key)
                     keybind.value = key
-                    local keyName = getKeyName(key)
-                    keybindvalue.Text = "[" .. keyName .. "]"
-                    keybindvalue.Position = utility.Position(1, -utility.GetTextBounds("[" .. keyName .. "]", theme.textsize, theme.font).X, 0, -1, keybindholder)
+                    local keyName = "[" .. getKeyName(key) .. "]"
+                    pcall(function()
+                        keybindvalue.Text = keyName
+                        keybindvalue.Position = Vector2.new(sectionframe.Position.X + sectionframe.Size.X - 8 - utility.GetTextBounds(keyName, theme.textsize, theme.font).X, sectionframe.Position.Y + keybind.axis - 1)
+                    end)
                     if keybindflag then
                         library.flags[keybindflag] = key
                     end
@@ -1626,16 +1398,12 @@ function library:New(info)
                 end
 
                 function keybind:SetVisible(state)
-                    keybindholder.Visible = state
-                    keybindtitle.Visible = state
-                    keybindvalue.Visible = state
+                    pcall(function()
+                        keybindtitle.Visible = state
+                        keybindvalue.Visible = state
+                    end)
                 end
 
-                function keybind:GetHeight()
-                    return 14
-                end
-
-                -- Input handling
                 library.began[#library.began + 1] = function(input)
                     if keybind.listening and window.isVisible then
                         local key = input.KeyCode ~= Enum.KeyCode.Unknown and input.KeyCode or input.UserInputType
@@ -1645,23 +1413,22 @@ function library:New(info)
                             keybind:Set(Enum.KeyCode.Unknown)
                         end
                         keybind.listening = false
-                        keybindvalue.Color = theme.textcolor
+                        pcall(function() keybindvalue.Color = theme.textcolor end)
                         return
                     end
 
-                    if input.UserInputType == Enum.UserInputType.MouseButton1 and window.isVisible and keybindholder.Visible then
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 and window.isVisible and keybindtitle.Visible then
                         if utility.MouseOverDrawing({
-                            keybindholder.Position.X,
-                            keybindholder.Position.Y,
-                            keybindholder.Position.X + keybindholder.Size.X,
-                            keybindholder.Position.Y + keybindholder.Size.Y
+                            sectionframe.Position.X + 8,
+                            sectionframe.Position.Y + keybind.axis - 2,
+                            sectionframe.Position.X + sectionframe.Size.X - 8,
+                            sectionframe.Position.Y + keybind.axis + 14
                         }) and not window:IsOverContent() then
                             keybind.listening = true
-                            keybindvalue.Color = theme.accent
+                            pcall(function() keybindvalue.Color = theme.accent end)
                         end
                     end
 
-                    -- Trigger callback
                     if keybind.value ~= Enum.KeyCode.Unknown then
                         if input.KeyCode == keybind.value or input.UserInputType == keybind.value then
                             pcall(keybindcallback, keybind.value)
@@ -1669,7 +1436,6 @@ function library:New(info)
                     end
                 end
 
-                -- Initialize
                 if keybindflag then
                     library.flags[keybindflag] = keybinddefault
                     library.pointers[keybindflag] = keybind
@@ -1688,30 +1454,25 @@ function library:New(info)
         return page
     end
 
-    -- Initialize window
+    -- Initialize
     function window:Initialize()
         if window.pages[1] then
             window.pages[1]:Show()
-        end
-
-        for i, v in pairs(window.pages) do
-            v:Update()
         end
 
         library.shared.initialized = true
 
         window:Watermark({name = name})
         window:Cursor()
-
         window:Fade()
 
         library:Log("Window initialized", "INFO")
     end
 
-    -- Input connections
+    -- Input handling
     library.began[#library.began + 1] = function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 and window.isVisible then
-            if utility.MouseOverDrawing({
+            if mainframe and utility.MouseOverDrawing({
                 mainframe.Position.X,
                 mainframe.Position.Y,
                 mainframe.Position.X + mainframe.Size.X,
@@ -1722,7 +1483,6 @@ function library:New(info)
                 window.drag = Vector2.new(mouseLocation.X - mainframe.Position.X, mouseLocation.Y - mainframe.Position.Y)
             end
 
-            -- Tab clicking
             for i, page in pairs(window.pages) do
                 if page.taboutline and utility.MouseOverDrawing({
                     page.taboutline.Position.X,
@@ -1744,14 +1504,21 @@ function library:New(info)
     end
 
     library.changed[#library.changed + 1] = function()
-        if window.dragging and window.isVisible then
+        if window.dragging and window.isVisible and mainframe then
             local mouseLocation = utility.MouseLocation()
             local screenSize = utility.GetScreenSize()
-            local move = Vector2.new(
-                math.clamp(mouseLocation.X - window.drag.X, 5, screenSize.X - mainframe.Size.X - 5),
-                math.clamp(mouseLocation.Y - window.drag.Y, 5, screenSize.Y - mainframe.Size.Y - 5)
-            )
-            window:Move(move)
+            local newX = math.clamp(mouseLocation.X - window.drag.X, 5, screenSize.X - mainframe.Size.X - 5)
+            local newY = math.clamp(mouseLocation.Y - window.drag.Y, 5, screenSize.Y - mainframe.Size.Y - 5)
+
+            local delta = Vector2.new(newX - mainframe.Position.X, newY - mainframe.Position.Y)
+
+            for i, v in pairs(library.drawings) do
+                if v[1] then
+                    pcall(function()
+                        v[1].Position = Vector2.new(v[1].Position.X + delta.X, v[1].Position.Y + delta.Y)
+                    end)
+                end
+            end
         end
     end
 
@@ -1761,7 +1528,7 @@ function library:New(info)
         end
     end
 
-    -- Connect input events
+    -- Connect events
     utility.Connection(UserInputService.InputBegan, function(input)
         for _, func in pairs(library.began) do
             pcall(func, input)
@@ -1778,10 +1545,6 @@ function library:New(info)
         for _, func in pairs(library.ended) do
             pcall(func, input)
         end
-    end)
-
-    utility.Connection(workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"), function()
-        window:Move(Vector2.new(utility.GetScreenSize().X/2 - size.X/2, utility.GetScreenSize().Y/2 - size.Y/2))
     end)
 
     return setmetatable(window, library)
@@ -1802,39 +1565,32 @@ function library:SaveConfig(name)
             end
         end
     end
-    local encoded = HttpService:JSONEncode(config)
-    writefile(library.folders.configs .. "/" .. name .. ".json", encoded)
+    pcall(function()
+        writefile(library.folders.configs .. "/" .. name .. ".json", HttpService:JSONEncode(config))
+    end)
     library:Log("Config saved: " .. name, "INFO")
 end
 
 function library:LoadConfig(name)
-    if isfile(library.folders.configs .. "/" .. name .. ".json") then
-        local decoded = HttpService:JSONDecode(readfile(library.folders.configs .. "/" .. name .. ".json"))
-        for flag, value in pairs(decoded) do
-            if library.pointers[flag] and library.pointers[flag].Set then
-                if type(value) == "table" then
-                    if value.Type == "Enum" then
-                        library.pointers[flag]:Set(Enum[value.EnumType][value.Name])
-                    elseif value.Type == "Color3" then
-                        library.pointers[flag]:Set(Color3.new(value.R, value.G, value.B))
+    pcall(function()
+        if isfile(library.folders.configs .. "/" .. name .. ".json") then
+            local decoded = HttpService:JSONDecode(readfile(library.folders.configs .. "/" .. name .. ".json"))
+            for flag, value in pairs(decoded) do
+                if library.pointers[flag] and library.pointers[flag].Set then
+                    if type(value) == "table" then
+                        if value.Type == "Enum" then
+                            library.pointers[flag]:Set(Enum[value.EnumType][value.Name])
+                        elseif value.Type == "Color3" then
+                            library.pointers[flag]:Set(Color3.new(value.R, value.G, value.B))
+                        end
+                    else
+                        library.pointers[flag]:Set(value)
                     end
-                else
-                    library.pointers[flag]:Set(value)
                 end
             end
+            library:Log("Config loaded: " .. name, "INFO")
         end
-        library:Log("Config loaded: " .. name, "INFO")
-    end
-end
-
-function library:GetConfigs()
-    local configs = {}
-    for _, file in pairs(listfiles(library.folders.configs)) do
-        if file:sub(-5) == ".json" then
-            table.insert(configs, file:match("([^/\]+)%.json$"))
-        end
-    end
-    return configs
+    end)
 end
 
 return library
