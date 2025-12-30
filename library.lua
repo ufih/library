@@ -1,7 +1,7 @@
 --[[
     GHACK OT UI Library
     Roblox recreation of GMod GHack menu
-]]
+--]]
 
 local Library = {}
 
