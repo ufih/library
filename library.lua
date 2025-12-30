@@ -1,14 +1,16 @@
 --[[
 
-NexusLib v4.2 - Ultimate Enhanced Drawing UI Library
+NexusLib v4.3 - Ultimate Enhanced Drawing UI Library
 
 FIXES:
-- Tab text now properly hides when UI is hidden
-- Theme changing now works properly with SetTheme()
-- Accent color now works properly with SetAccent()
-- Keybind now correctly reads keys (fixed M1/wrong key bug)
-- Toggle hint updates when menu toggle keybind changes
-- Improved tooltip system
+- Dropdown now blocks input to elements behind it
+- Added accent color picker
+- Improved color picker with proper gradient
+- Watermark and keybind list are now draggable
+- Tabs moved to right side of topbar
+- Tab text properly hides when UI is hidden
+- Theme/Accent changes work properly
+- Keybind correctly reads keys (fixed M1 bug)
 
 ]]
 
@@ -36,6 +38,7 @@ local library = {
     open = true,
     accent = Color3.fromRGB(76, 162, 252),
     menuKeybind = Enum.KeyCode.RightShift,
+    blockingInput = false, -- Flag to block input to elements behind dropdowns/pickers
     theme = {
         background = Color3.fromRGB(12, 12, 12),
         topbar = Color3.fromRGB(16, 16, 16),
@@ -51,7 +54,7 @@ local library = {
         warning = Color3.fromRGB(255, 180, 50),
         error = Color3.fromRGB(240, 80, 80)
     },
-    watermark = { enabled = false, objects = {} },
+    watermark = { enabled = false, objects = {}, dragging = false, dragOffset = Vector2.new(0, 0), position = Vector2.new(10, 10) },
     cursor = { enabled = false, objects = {} },
     windows = {},
     accentObjects = {},
@@ -247,7 +250,6 @@ function library:SetTheme(themeName)
     local themeData = library.themes[themeName]
     if not themeData then return end
 
-    -- Update theme table
     for key, value in pairs(themeData) do
         if key == "accent" then
             library:SetAccent(value)
@@ -256,7 +258,6 @@ function library:SetTheme(themeName)
         end
     end
 
-    -- Update all theme objects
     for _, data in pairs(library.themeObjects) do
         pcall(function()
             if data.obj and data.property and data.themeKey then
@@ -266,12 +267,10 @@ function library:SetTheme(themeName)
     end
 end
 
--- Register accent object for auto-updating
 local function registerAccent(obj, property)
     table.insert(library.accentObjects, {obj = obj, property = property})
 end
 
--- Register theme object for auto-updating
 local function registerTheme(obj, property, themeKey)
     table.insert(library.themeObjects, {obj = obj, property = property, themeKey = themeKey})
 end
@@ -367,7 +366,7 @@ function library:HideTooltip()
 end
 
 --==================================--
---        WATERMARK SYSTEM          --
+--    DRAGGABLE WATERMARK SYSTEM    --
 --==================================--
 function library:CreateWatermark(config)
     config = config or {}
@@ -378,10 +377,11 @@ function library:CreateWatermark(config)
 
     local initialText = title .. " | 0 fps | 0ms | 00:00:00"
     local width = textBounds(initialText, 13).X + 20
+    local pos = watermark.position
 
     watermark.objects.outline = create("Square", {
         Size = Vector2.new(width, 24),
-        Position = Vector2.new(10, 10),
+        Position = pos,
         Color = t.outline,
         Filled = true,
         Visible = false,
@@ -391,7 +391,7 @@ function library:CreateWatermark(config)
 
     watermark.objects.bg = create("Square", {
         Size = Vector2.new(width - 2, 22),
-        Position = Vector2.new(11, 11),
+        Position = pos + Vector2.new(1, 1),
         Color = t.background,
         Filled = true,
         Visible = false,
@@ -401,7 +401,7 @@ function library:CreateWatermark(config)
 
     watermark.objects.accent = create("Square", {
         Size = Vector2.new(width - 4, 2),
-        Position = Vector2.new(12, 12),
+        Position = pos + Vector2.new(2, 2),
         Color = a,
         Filled = true,
         Visible = false,
@@ -416,13 +416,27 @@ function library:CreateWatermark(config)
         Color = t.text,
         Outline = true,
         OutlineColor = Color3.new(0, 0, 0),
-        Position = Vector2.new(18, 16),
+        Position = pos + Vector2.new(8, 6),
         Visible = false,
         ZIndex = 103
     })
     registerTheme(watermark.objects.text, "Color", "text")
 
     watermark.title = title
+    watermark.width = width
+
+    function watermark:UpdatePositions()
+        local p = watermark.position
+        local w = watermark.width
+        pcall(function() watermark.objects.outline.Position = p end)
+        pcall(function() watermark.objects.outline.Size = Vector2.new(w, 24) end)
+        pcall(function() watermark.objects.bg.Position = p + Vector2.new(1, 1) end)
+        pcall(function() watermark.objects.bg.Size = Vector2.new(w - 2, 22) end)
+        pcall(function() watermark.objects.accent.Position = p + Vector2.new(2, 2) end)
+        pcall(function() watermark.objects.accent.Size = Vector2.new(w - 4, 2) end)
+        pcall(function() watermark.objects.text.Position = p + Vector2.new(8, 6) end)
+    end
+
     local lastUpdate = 0
     local fpsBuffer = {}
 
@@ -442,11 +456,37 @@ function library:CreateWatermark(config)
         local newText = watermark.title .. " | " .. avgFps .. " fps | " .. ping .. "ms | " .. time
         pcall(function()
             watermark.objects.text.Text = newText
-            local newWidth = textBounds(newText, 13).X + 20
-            watermark.objects.outline.Size = Vector2.new(newWidth, 24)
-            watermark.objects.bg.Size = Vector2.new(newWidth - 2, 22)
-            watermark.objects.accent.Size = Vector2.new(newWidth - 4, 2)
+            watermark.width = textBounds(newText, 13).X + 20
+            watermark:UpdatePositions()
         end)
+    end))
+
+    -- Dragging for watermark
+    table.insert(library.connections, UIS.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 and watermark.enabled then
+            local pos = watermark.position
+            if mouseOver(pos.X, pos.Y, watermark.width, 24) then
+                watermark.dragging = true
+                local success, mouse = pcall(function() return UIS:GetMouseLocation() end)
+                if success then watermark.dragOffset = Vector2.new(mouse.X - pos.X, mouse.Y - pos.Y) end
+            end
+        end
+    end))
+
+    table.insert(library.connections, UIS.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            watermark.dragging = false
+        end
+    end))
+
+    table.insert(library.connections, RS.RenderStepped:Connect(function()
+        if watermark.dragging then
+            local success, mouse = pcall(function() return UIS:GetMouseLocation() end)
+            if success then
+                watermark.position = Vector2.new(mouse.X - watermark.dragOffset.X, mouse.Y - watermark.dragOffset.Y)
+                watermark:UpdatePositions()
+            end
+        end
     end))
 
     function watermark:SetEnabled(state)
@@ -620,7 +660,7 @@ function library:Notify(config)
 end
 
 --==================================--
---      KEYBIND INDICATOR LIST      --
+--   DRAGGABLE KEYBIND INDICATOR    --
 --==================================--
 function library:CreateKeybindList(config)
     config = config or {}
@@ -630,7 +670,9 @@ function library:CreateKeybindList(config)
         objects = {},
         items = {},
         enabled = false,
-        position = Vector2.new(10, 50)
+        position = Vector2.new(10, 50),
+        dragging = false,
+        dragOffset = Vector2.new(0, 0)
     }
 
     local t = library.theme
@@ -680,10 +722,28 @@ function library:CreateKeybindList(config)
     })
     registerTheme(list.objects.title, "Color", "text")
 
+    list.width = width
+
+    function list:UpdatePositions()
+        local p = list.position
+        pcall(function() list.objects.outline.Position = p end)
+        pcall(function() list.objects.bg.Position = p + Vector2.new(1, 1) end)
+        pcall(function() list.objects.accent.Position = p + Vector2.new(2, 2) end)
+        pcall(function() list.objects.title.Position = p + Vector2.new(8, 7) end)
+        list:UpdateHeight()
+    end
+
     function list:SetEnabled(state)
         list.enabled = state
         for _, obj in pairs(list.objects) do
             pcall(function() obj.Visible = state end)
+        end
+        for _, item in pairs(list.items) do
+            if item.active then
+                for _, obj in pairs(item.objects) do
+                    pcall(function() obj.Visible = state end)
+                end
+            end
         end
     end
 
@@ -762,6 +822,34 @@ function library:CreateKeybindList(config)
         end
     end
 
+    -- Dragging for keybind list
+    table.insert(library.connections, UIS.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 and list.enabled then
+            local pos = list.position
+            if mouseOver(pos.X, pos.Y, width, 26) then
+                list.dragging = true
+                local success, mouse = pcall(function() return UIS:GetMouseLocation() end)
+                if success then list.dragOffset = Vector2.new(mouse.X - pos.X, mouse.Y - pos.Y) end
+            end
+        end
+    end))
+
+    table.insert(library.connections, UIS.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            list.dragging = false
+        end
+    end))
+
+    table.insert(library.connections, RS.RenderStepped:Connect(function()
+        if list.dragging then
+            local success, mouse = pcall(function() return UIS:GetMouseLocation() end)
+            if success then
+                list.position = Vector2.new(mouse.X - list.dragOffset.X, mouse.Y - list.dragOffset.Y)
+                list:UpdatePositions()
+            end
+        end
+    end))
+
     library.keybindList = list
     return list
 end
@@ -828,6 +916,7 @@ function library:New(config)
         currentPage = nil,
         objects = {},
         activeDropdown = nil,
+        activeColorPicker = nil,
         tooltipElements = {}
     }
 
@@ -888,7 +977,7 @@ function library:New(config)
     })
     registerAccent(window.objects.accentLine, "Color")
 
-    -- Title with accent color
+    -- Title (left side)
     window.objects.title = create("Text", {
         Text = name,
         Size = 14,
@@ -966,7 +1055,7 @@ function library:New(config)
     registerTheme(window.objects.bottombar, "Color", "topbar")
 
     window.objects.version = create("Text", {
-        Text = "v4.2",
+        Text = "v4.3",
         Size = 13,
         Font = 2,
         Color = t.dimtext,
@@ -1005,8 +1094,8 @@ function library:New(config)
     })
     registerTheme(window.objects.toggleHint, "Color", "dimtext")
 
-    local tabStartX = textBounds(name, 14).X + 22
-    window.tabStartX = tabStartX
+    -- Tabs will be positioned from the RIGHT side
+    window.tabRightEdge = sizeX - 10
 
     -- FPS counter
     local fpsBuffer = {}
@@ -1055,15 +1144,32 @@ function library:New(config)
             pcall(function() obj.Visible = state end)
         end
         for _, page in pairs(window.pages) do
-            -- FIX: Hide tab text when UI is hidden
             pcall(function() page.objects.tabText.Visible = state end)
             if page.SetVisible then page:SetVisible(state and page == window.currentPage) end
         end
-        if not state then library:HideTooltip() end
+        if not state then 
+            library:HideTooltip()
+            -- Close any open dropdowns/pickers
+            if window.activeDropdown then window.activeDropdown:Close() end
+            if window.activeColorPicker then window.activeColorPicker:Close() end
+        end
     end
 
     function window:Toggle()
         window:SetVisible(not library.open)
+    end
+
+    -- Close dropdowns/pickers when clicking elsewhere
+    function window:ClosePopups()
+        if window.activeDropdown then 
+            window.activeDropdown:Close() 
+            window.activeDropdown = nil
+        end
+        if window.activeColorPicker then 
+            window.activeColorPicker:Close() 
+            window.activeColorPicker = nil
+        end
+        library.blockingInput = false
     end
 
     -- Tooltip hover checking with delay
@@ -1099,7 +1205,7 @@ function library:New(config)
         end
     end))
 
-    -- Page function
+    -- Page function (tabs now on right side)
     function window:Page(config)
         config = config or {}
         local pageName = config.name or "Page"
@@ -1114,11 +1220,12 @@ function library:New(config)
             window = window
         }
 
-        local tabX = window.tabStartX
-        for _, p in pairs(window.pages) do
-            tabX = tabX + textBounds(p.name, 13).X + 18
-        end
+        -- Calculate tab position from RIGHT side
         local tabWidth = textBounds(pageName, 13).X + 14
+        local tabX = window.tabRightEdge - tabWidth
+
+        -- Update the right edge for next tab
+        window.tabRightEdge = tabX - 4
 
         page.objects.tabBg = create("Square", {
             Size = Vector2.new(tabWidth, 21),
@@ -1148,7 +1255,7 @@ function library:New(config)
             Outline = true,
             OutlineColor = Color3.new(0, 0, 0),
             Position = window.pos + Vector2.new(tabX + 7, 8),
-            Visible = library.open,  -- FIX: Only visible when UI is open
+            Visible = library.open,
             ZIndex = 6
         })
 
@@ -1172,7 +1279,6 @@ function library:New(config)
             page.visible = state
             pcall(function() page.objects.tabBg.Visible = state end)
             pcall(function() page.objects.tabAccent.Visible = state end)
-            -- FIX: Tab text visibility tied to library.open AND state for color
             pcall(function() page.objects.tabText.Visible = library.open end)
             pcall(function() page.objects.tabText.Color = state and library.accent or t.dimtext end)
             for _, btn in pairs(page.sectionButtons) do
@@ -1184,6 +1290,7 @@ function library:New(config)
         end
 
         function page:Show()
+            window:ClosePopups()
             for _, p in pairs(window.pages) do
                 if p.SetVisible then p:SetVisible(false) end
             end
@@ -1416,6 +1523,7 @@ function library:New(config)
             end
 
             function section:Show()
+                window:ClosePopups()
                 for _, s in pairs(page.sections) do
                     if s.SetVisible then s:SetVisible(false) end
                 end
@@ -1504,9 +1612,9 @@ function library:New(config)
 
                 function toggle:Get() return toggle.value end
 
-                -- Click handler
                 table.insert(library.connections, UIS.InputBegan:Connect(function(input)
                     if input.UserInputType == Enum.UserInputType.MouseButton1 and library.open and section.visible then
+                        if library.blockingInput then return end
                         local pos = toggle.objects.box.Position
                         if mouseOver(pos.X - 2, pos.Y - 2, toggle.width, 16) then
                             toggle:Set(not toggle.value)
@@ -1514,7 +1622,6 @@ function library:New(config)
                     end
                 end))
 
-                -- Register for tooltip
                 if tooltipText then
                     table.insert(window.tooltipElements, {
                         element = toggle,
@@ -1663,6 +1770,7 @@ function library:New(config)
 
                 table.insert(library.connections, UIS.InputBegan:Connect(function(input)
                     if input.UserInputType == Enum.UserInputType.MouseButton1 and library.open and section.visible then
+                        if library.blockingInput then return end
                         local pos = slider.objects.trackOutline.Position
                         if mouseOver(pos.X, pos.Y, slider.width, 12) then
                             slider.dragging = true
@@ -1776,6 +1884,7 @@ function library:New(config)
 
                 table.insert(library.connections, UIS.InputBegan:Connect(function(input)
                     if input.UserInputType == Enum.UserInputType.MouseButton1 and library.open and section.visible then
+                        if library.blockingInput then return end
                         local pos = button.objects.outline.Position
                         if mouseOver(pos.X, pos.Y, button.width, 22) then
                             pcall(function() button.objects.bg.Color = library.accent end)
@@ -1795,7 +1904,7 @@ function library:New(config)
                 return button
             end
 
-            --=============== DROPDOWN ===============--
+            --=============== DROPDOWN (WITH INPUT BLOCKING) ===============--
             function section:Dropdown(config)
                 config = config or {}
                 local dropdownName = config.name or "Dropdown"
@@ -1819,7 +1928,8 @@ function library:New(config)
                     side = side,
                     yOffset = offset,
                     objects = {},
-                    itemObjects = {}
+                    itemObjects = {},
+                    blockArea = nil
                 }
 
                 dropdown.objects.label = create("Text", {
@@ -1904,19 +2014,37 @@ function library:New(config)
 
                 function dropdown:Close()
                     dropdown.open = false
+                    library.blockingInput = false
+                    dropdown.blockArea = nil
                     for _, obj in pairs(dropdown.itemObjects) do
                         pcall(function() obj:Remove() end)
                     end
                     dropdown.itemObjects = {}
+                    if window.activeDropdown == dropdown then
+                        window.activeDropdown = nil
+                    end
                 end
 
                 function dropdown:Open()
                     if dropdown.open then dropdown:Close() return end
+
+                    -- Close any other open popups
+                    window:ClosePopups()
+
                     dropdown.open = true
                     window.activeDropdown = dropdown
+                    library.blockingInput = true
 
                     local pos = dropdown.objects.outline.Position
                     local listH = math.min(#items * 20 + 4, 164)
+
+                    -- Store block area for input blocking
+                    dropdown.blockArea = {
+                        x = pos.X,
+                        y = pos.Y + 24,
+                        w = dropdown.width,
+                        h = listH
+                    }
 
                     local listBg = create("Square", {
                         Size = Vector2.new(dropdown.width, listH),
@@ -1982,10 +2110,14 @@ function library:New(config)
                 table.insert(library.connections, UIS.InputBegan:Connect(function(input)
                     if input.UserInputType == Enum.UserInputType.MouseButton1 and library.open and section.visible then
                         local pos = dropdown.objects.outline.Position
+
+                        -- Handle clicks on the dropdown button
                         if mouseOver(pos.X, pos.Y, dropdown.width, 22) then
                             dropdown:Open()
                             return
                         end
+
+                        -- Handle clicks on dropdown items when open
                         if dropdown.open then
                             for i, item in ipairs(items) do
                                 local itemY = pos.Y + 24 + (i-1) * 20
@@ -2004,7 +2136,10 @@ function library:New(config)
                                     return
                                 end
                             end
-                            dropdown:Close()
+                            -- Click outside dropdown list - close it
+                            if dropdown.blockArea and not mouseOver(dropdown.blockArea.x, dropdown.blockArea.y, dropdown.blockArea.w, dropdown.blockArea.h) then
+                                dropdown:Close()
+                            end
                         end
                     end
                 end))
@@ -2097,7 +2232,6 @@ function library:New(config)
                     pcall(function() keybind.objects.key.Color = library.accent end)
                     if flag then library.flags[flag] = key end
 
-                    -- Update menu keybind if this is the menu toggle
                     if isMenuToggle then
                         library.menuKeybind = key
                         window:UpdateToggleHint()
@@ -2106,15 +2240,15 @@ function library:New(config)
 
                 function keybind:Get() return keybind.value end
 
-                -- FIX: Separate click handler that only starts listening
                 table.insert(library.connections, UIS.InputBegan:Connect(function(input)
-                    -- Handle starting listen mode (click on keybind area)
+                    -- Handle starting listen mode
                     if input.UserInputType == Enum.UserInputType.MouseButton1 and library.open and section.visible then
+                        if library.blockingInput then return end -- Block if dropdown/picker is open
                         if not keybind.listening then
                             local pos = keybind.objects.label.Position
                             if mouseOver(pos.X, pos.Y - 2, keybind.width, 18) then
                                 keybind.listening = true
-                                keybind.ignoreNextClick = true -- Ignore the mouse release
+                                keybind.ignoreNextClick = true
                                 pcall(function() keybind.objects.key.Text = "[...]" end)
                                 pcall(function() keybind.objects.key.Color = t.warning end)
                                 return
@@ -2124,25 +2258,21 @@ function library:New(config)
 
                     -- Handle key/mouse input while listening
                     if keybind.listening then
-                        -- Skip the initial click that started listening
                         if keybind.ignoreNextClick and input.UserInputType == Enum.UserInputType.MouseButton1 then
                             return
                         end
 
                         local key = nil
 
-                        -- Check if it's a keyboard input
                         if input.UserInputType == Enum.UserInputType.Keyboard then
                             if input.KeyCode == Enum.KeyCode.Escape then
                                 key = Enum.KeyCode.Unknown
                             else
                                 key = input.KeyCode
                             end
-                        -- Check if it's a mouse button (but not the initial click)
                         elseif input.UserInputType == Enum.UserInputType.MouseButton1 or 
                                input.UserInputType == Enum.UserInputType.MouseButton2 or
                                input.UserInputType == Enum.UserInputType.MouseButton3 then
-                            -- Only accept mouse buttons after the initial click flag is cleared
                             if not keybind.ignoreNextClick then
                                 key = input.UserInputType
                             end
@@ -2156,7 +2286,7 @@ function library:New(config)
                         return
                     end
 
-                    -- Handle keybind activation (when not listening)
+                    -- Handle keybind activation
                     if keybind.value ~= Enum.KeyCode.Unknown and not keybind.listening then
                         if input.KeyCode == keybind.value or input.UserInputType == keybind.value then
                             pcall(callback, keybind.value)
@@ -2164,7 +2294,6 @@ function library:New(config)
                     end
                 end))
 
-                -- Clear the ignore flag on mouse release
                 table.insert(library.connections, UIS.InputEnded:Connect(function(input)
                     if input.UserInputType == Enum.UserInputType.MouseButton1 and keybind.ignoreNextClick then
                         task.delay(0.1, function()
@@ -2184,7 +2313,7 @@ function library:New(config)
                 return keybind
             end
 
-            --=============== COLORPICKER ===============--
+            --=============== IMPROVED COLORPICKER ===============--
             function section:ColorPicker(config)
                 config = config or {}
                 local pickerName = config.name or "Color"
@@ -2209,7 +2338,8 @@ function library:New(config)
                     side = side,
                     yOffset = offset,
                     objects = {},
-                    pickerObjects = {}
+                    pickerObjects = {},
+                    blockArea = nil
                 }
 
                 colorpicker.objects.label = create("Text", {
@@ -2267,23 +2397,41 @@ function library:New(config)
                     colorpicker.open = false
                     colorpicker.draggingSV = false
                     colorpicker.draggingH = false
+                    library.blockingInput = false
+                    colorpicker.blockArea = nil
                     for _, obj in pairs(colorpicker.pickerObjects) do
                         pcall(function() obj:Remove() end)
                     end
                     colorpicker.pickerObjects = {}
+                    if window.activeColorPicker == colorpicker then
+                        window.activeColorPicker = nil
+                    end
                 end
 
                 function colorpicker:Open()
                     if colorpicker.open then colorpicker:Close() return end
+
+                    window:ClosePopups()
+
                     colorpicker.open = true
+                    window.activeColorPicker = colorpicker
+                    library.blockingInput = true
 
                     local pos = colorpicker.objects.preview.Position
-                    local pickerW, pickerH = 180, 160
+                    local pickerW, pickerH = 200, 180
 
+                    colorpicker.blockArea = {
+                        x = pos.X - pickerW + 24,
+                        y = pos.Y + 18,
+                        w = pickerW,
+                        h = pickerH
+                    }
+
+                    -- Background
                     local bg = create("Square", {
                         Size = Vector2.new(pickerW, pickerH),
                         Position = Vector2.new(pos.X - pickerW + 24, pos.Y + 18),
-                        Color = t.elementbg,
+                        Color = t.background,
                         Filled = true,
                         Visible = true,
                         ZIndex = 60
@@ -2301,10 +2449,25 @@ function library:New(config)
                     })
                     table.insert(colorpicker.pickerObjects, outline)
 
-                    local svX = pos.X - pickerW + 32
-                    local svY = pos.Y + 26
+                    -- Title
+                    local title = create("Text", {
+                        Text = "Color Picker",
+                        Size = 12,
+                        Font = 2,
+                        Color = t.dimtext,
+                        Outline = true,
+                        OutlineColor = Color3.new(0, 0, 0),
+                        Position = Vector2.new(pos.X - pickerW + 34, pos.Y + 23),
+                        Visible = true,
+                        ZIndex = 62
+                    })
+                    table.insert(colorpicker.pickerObjects, title)
+
+                    local svX = pos.X - pickerW + 34
+                    local svY = pos.Y + 42
                     local svSize = 120
 
+                    -- SV Box background (white)
                     local svWhite = create("Square", {
                         Size = Vector2.new(svSize, svSize),
                         Position = Vector2.new(svX, svY),
@@ -2315,6 +2478,7 @@ function library:New(config)
                     })
                     table.insert(colorpicker.pickerObjects, svWhite)
 
+                    -- Hue overlay
                     local r, g, b = hsvToRgb(colorpicker.h, 1, 1)
                     local svHue = create("Square", {
                         Size = Vector2.new(svSize, svSize),
@@ -2328,6 +2492,22 @@ function library:New(config)
                     table.insert(colorpicker.pickerObjects, svHue)
                     colorpicker.svHue = svHue
 
+                    -- Black gradient overlay (vertical, for value)
+                    for i = 0, svSize - 1, 4 do
+                        local alpha = i / svSize
+                        local gradLine = create("Square", {
+                            Size = Vector2.new(svSize, 4),
+                            Position = Vector2.new(svX, svY + i),
+                            Color = Color3.new(0, 0, 0),
+                            Transparency = alpha,
+                            Filled = true,
+                            Visible = true,
+                            ZIndex = 64
+                        })
+                        table.insert(colorpicker.pickerObjects, gradLine)
+                    end
+
+                    -- SV outline
                     local svOutline = create("Square", {
                         Size = Vector2.new(svSize, svSize),
                         Position = Vector2.new(svX, svY),
@@ -2335,34 +2515,50 @@ function library:New(config)
                         Filled = false,
                         Thickness = 1,
                         Visible = true,
-                        ZIndex = 64
+                        ZIndex = 65
                     })
                     table.insert(colorpicker.pickerObjects, svOutline)
 
-                    local svCursorX = svX + colorpicker.s * svSize - 4
-                    local svCursorY = svY + (1 - colorpicker.v) * svSize - 4
+                    -- SV Cursor
+                    local svCursorX = svX + colorpicker.s * svSize
+                    local svCursorY = svY + (1 - colorpicker.v) * svSize
                     local svCursor = create("Circle", {
-                        Radius = 5,
-                        Position = Vector2.new(svCursorX + 4, svCursorY + 4),
+                        Radius = 6,
+                        Position = Vector2.new(svCursorX, svCursorY),
                         Color = Color3.new(1, 1, 1),
                         Filled = false,
                         Thickness = 2,
                         Visible = true,
-                        ZIndex = 65
+                        ZIndex = 66
                     })
                     table.insert(colorpicker.pickerObjects, svCursor)
                     colorpicker.svCursor = svCursor
 
-                    local hueX = svX + svSize + 10
-                    local hueY = svY
-                    local hueW, hueH = 20, svSize
+                    local svCursorInner = create("Circle", {
+                        Radius = 4,
+                        Position = Vector2.new(svCursorX, svCursorY),
+                        Color = Color3.new(0, 0, 0),
+                        Filled = false,
+                        Thickness = 1,
+                        Visible = true,
+                        ZIndex = 67
+                    })
+                    table.insert(colorpicker.pickerObjects, svCursorInner)
+                    colorpicker.svCursorInner = svCursorInner
 
-                    for i = 0, 11 do
-                        local hueVal = i / 12
+                    -- Hue bar
+                    local hueX = svX + svSize + 12
+                    local hueY = svY
+                    local hueW, hueH = 24, svSize
+
+                    -- Draw rainbow gradient
+                    local hueSteps = 24
+                    for i = 0, hueSteps - 1 do
+                        local hueVal = i / hueSteps
                         local hr, hg, hb = hsvToRgb(hueVal, 1, 1)
                         local hueStep = create("Square", {
-                            Size = Vector2.new(hueW, hueH / 12 + 1),
-                            Position = Vector2.new(hueX, hueY + i * (hueH / 12)),
+                            Size = Vector2.new(hueW, hueH / hueSteps + 1),
+                            Position = Vector2.new(hueX, hueY + i * (hueH / hueSteps)),
                             Color = Color3.fromRGB(hr, hg, hb),
                             Filled = true,
                             Visible = true,
@@ -2378,22 +2574,59 @@ function library:New(config)
                         Filled = false,
                         Thickness = 1,
                         Visible = true,
-                        ZIndex = 64
+                        ZIndex = 65
                     })
                     table.insert(colorpicker.pickerObjects, hueOutline)
 
-                    local hueCursorY = hueY + colorpicker.h * hueH - 2
+                    -- Hue cursor
+                    local hueCursorY = hueY + colorpicker.h * hueH
                     local hueCursor = create("Square", {
-                        Size = Vector2.new(hueW, 4),
-                        Position = Vector2.new(hueX, hueCursorY),
+                        Size = Vector2.new(hueW + 4, 4),
+                        Position = Vector2.new(hueX - 2, hueCursorY - 2),
                         Color = Color3.new(1, 1, 1),
                         Filled = false,
-                        Thickness = 1,
+                        Thickness = 2,
                         Visible = true,
-                        ZIndex = 65
+                        ZIndex = 66
                     })
                     table.insert(colorpicker.pickerObjects, hueCursor)
                     colorpicker.hueCursor = hueCursor
+
+                    -- Current color preview
+                    local previewLabel = create("Text", {
+                        Text = "Current:",
+                        Size = 11,
+                        Font = 2,
+                        Color = t.dimtext,
+                        Outline = true,
+                        OutlineColor = Color3.new(0, 0, 0),
+                        Position = Vector2.new(svX, svY + svSize + 8),
+                        Visible = true,
+                        ZIndex = 62
+                    })
+                    table.insert(colorpicker.pickerObjects, previewLabel)
+
+                    local currentPreview = create("Square", {
+                        Size = Vector2.new(svSize + hueW + 12, 16),
+                        Position = Vector2.new(svX, svY + svSize + 22),
+                        Color = colorpicker.value,
+                        Filled = true,
+                        Visible = true,
+                        ZIndex = 62
+                    })
+                    table.insert(colorpicker.pickerObjects, currentPreview)
+                    colorpicker.currentPreview = currentPreview
+
+                    local currentPreviewOutline = create("Square", {
+                        Size = Vector2.new(svSize + hueW + 12, 16),
+                        Position = Vector2.new(svX, svY + svSize + 22),
+                        Color = t.outline,
+                        Filled = false,
+                        Thickness = 1,
+                        Visible = true,
+                        ZIndex = 63
+                    })
+                    table.insert(colorpicker.pickerObjects, currentPreviewOutline)
 
                     colorpicker.svX = svX
                     colorpicker.svY = svY
@@ -2408,6 +2641,9 @@ function library:New(config)
                     local r, g, b = hsvToRgb(colorpicker.h, colorpicker.s, colorpicker.v)
                     colorpicker.value = Color3.fromRGB(r, g, b)
                     pcall(function() colorpicker.objects.preview.Color = colorpicker.value end)
+                    if colorpicker.currentPreview then
+                        pcall(function() colorpicker.currentPreview.Color = colorpicker.value end)
+                    end
                     if colorpicker.svHue then
                         local hr, hg, hb = hsvToRgb(colorpicker.h, 1, 1)
                         pcall(function() colorpicker.svHue.Color = Color3.fromRGB(hr, hg, hb) end)
@@ -2442,8 +2678,8 @@ function library:New(config)
                                 colorpicker.draggingH = true
                                 return
                             end
-                            local bgPos = colorpicker.pickerObjects[1] and colorpicker.pickerObjects[1].Position
-                            if bgPos and not mouseOver(bgPos.X, bgPos.Y, 180, 160) then
+                            -- Click outside - close
+                            if colorpicker.blockArea and not mouseOver(colorpicker.blockArea.x, colorpicker.blockArea.y, colorpicker.blockArea.w, colorpicker.blockArea.h) then
                                 colorpicker:Close()
                             end
                         end
@@ -2467,7 +2703,10 @@ function library:New(config)
                                 colorpicker.s = relX
                                 colorpicker.v = 1 - relY
                                 if colorpicker.svCursor then
-                                    pcall(function() colorpicker.svCursor.Position = Vector2.new(colorpicker.svX + relX * colorpicker.svSize, colorpicker.svY + relY * colorpicker.svSize) end)
+                                    local cursorX = colorpicker.svX + relX * colorpicker.svSize
+                                    local cursorY = colorpicker.svY + relY * colorpicker.svSize
+                                    pcall(function() colorpicker.svCursor.Position = Vector2.new(cursorX, cursorY) end)
+                                    pcall(function() colorpicker.svCursorInner.Position = Vector2.new(cursorX, cursorY) end)
                                 end
                                 colorpicker:UpdateColor()
                             end
@@ -2475,7 +2714,7 @@ function library:New(config)
                                 local relY = math.clamp((mouse.Y - colorpicker.hueY) / colorpicker.hueH, 0, 1)
                                 colorpicker.h = relY
                                 if colorpicker.hueCursor then
-                                    pcall(function() colorpicker.hueCursor.Position = Vector2.new(colorpicker.hueX, colorpicker.hueY + relY * colorpicker.hueH - 2) end)
+                                    pcall(function() colorpicker.hueCursor.Position = Vector2.new(colorpicker.hueX - 2, colorpicker.hueY + relY * colorpicker.hueH - 2) end)
                                 end
                                 colorpicker:UpdateColor()
                             end
@@ -2611,6 +2850,7 @@ function library:New(config)
 
                 table.insert(library.connections, UIS.InputBegan:Connect(function(input)
                     if input.UserInputType == Enum.UserInputType.MouseButton1 and library.open and section.visible then
+                        if library.blockingInput then return end
                         local pos = textbox.objects.outline.Position
                         if mouseOver(pos.X, pos.Y, textbox.width, 22) then
                             textbox:Focus()
@@ -2703,6 +2943,7 @@ function library:New(config)
             -- Section button click
             table.insert(library.connections, UIS.InputBegan:Connect(function(input)
                 if input.UserInputType == Enum.UserInputType.MouseButton1 and library.open and page.visible then
+                    if library.blockingInput then return end
                     local pos = sectionBtn.objects.text.Position
                     if mouseOver(pos.X - 10, pos.Y - 4, 110, 22) then
                         section:Show()
@@ -2723,9 +2964,20 @@ function library:New(config)
         if input.UserInputType == Enum.UserInputType.MouseButton1 and library.open then
             local pos = window.pos
             if mouseOver(pos.X, pos.Y, sizeX, 28) then
-                window.dragging = true
-                local success, mouse = pcall(function() return UIS:GetMouseLocation() end)
-                if success then window.dragOffset = Vector2.new(mouse.X - pos.X, mouse.Y - pos.Y) end
+                -- Check if not clicking on a tab
+                local onTab = false
+                for _, page in pairs(window.pages) do
+                    local tabPos = page.objects.tabText.Position
+                    if mouseOver(tabPos.X - 7, tabPos.Y - 4, page.tabWidth, 22) then
+                        onTab = true
+                        break
+                    end
+                end
+                if not onTab then
+                    window.dragging = true
+                    local success, mouse = pcall(function() return UIS:GetMouseLocation() end)
+                    if success then window.dragOffset = Vector2.new(mouse.X - pos.X, mouse.Y - pos.Y) end
+                end
             end
             for _, page in pairs(window.pages) do
                 local tabPos = page.objects.tabText.Position
@@ -2735,7 +2987,7 @@ function library:New(config)
             end
         end
 
-        -- Menu toggle using library.menuKeybind
+        -- Menu toggle
         if input.KeyCode == library.menuKeybind or input.UserInputType == library.menuKeybind then
             window:Toggle()
         end
