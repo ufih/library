@@ -1,1403 +1,1840 @@
 --[[
-    NexusLib - Modern Roblox UI Library
-    Based on community favorites: Linoria, Splix, Puppyware, Deadcell, and more
-
-    Features:
-    - Modern syntax (no legacy executor dependencies)
-    - Window with dragging
-    - Tabs/Pages with sections
-    - Toggle, Slider, Dropdown, Button, Textbox, Keybind, Colorpicker
-    - Config save/load system
-    - Notifications
-    - Watermark
-    - Built-in Settings tab with Debug Menu and Unload
-    - Debug console for library monitoring
+    NexusLib - Drawing-Based UI Library
+    Based on Splix/Linux/Deadcell style
+    Modern syntax, no legacy executor dependencies
 ]]
 
 -- Services
-local Players = game:GetService("Players")
+local workspace = game:GetService("Workspace")
 local UserInputService = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local HttpService = game:GetService("HttpService")
-local CoreGui = game:GetService("CoreGui")
-local TextService = game:GetService("TextService")
+local Players = game:GetService("Players")
+local Stats = game:GetService("Stats")
+local TweenService = game:GetService("TweenService")
 
--- Variables
-local Player = Players.LocalPlayer
-local Mouse = Player:GetMouse()
+-- Library Variables
+local library = {
+    drawings = {},
+    hidden = {},
+    connections = {},
+    pointers = {},
+    began = {},
+    ended = {},
+    changed = {},
+    colors = {},
+    folders = {
+        main = "NexusLib",
+        assets = "NexusLib/assets",
+        configs = "NexusLib/configs"
+    },
+    shared = {
+        initialized = false,
+        fps = 0,
+        ping = 0
+    },
+    flags = {}
+}
 
--- Library Table
-local NexusLib = {
-    Windows = {},
-    Flags = {},
-    Connections = {},
-    DebugLogs = {},
-    Theme = {
-        Accent = Color3.fromRGB(96, 76, 255),
-        Background = Color3.fromRGB(25, 25, 25),
-        DarkBackground = Color3.fromRGB(20, 20, 20),
-        LightBackground = Color3.fromRGB(35, 35, 35),
-        Border = Color3.fromRGB(60, 60, 60),
-        Text = Color3.fromRGB(255, 255, 255),
-        SubText = Color3.fromRGB(180, 180, 180),
-        Disabled = Color3.fromRGB(100, 100, 100)
-    },
-    Settings = {
-        ToggleKey = Enum.KeyCode.RightShift,
-        ConfigFolder = "NexusLib",
-        DebugMode = true
-    },
-    Open = true
+-- Create folders
+for _, folder in pairs(library.folders) do
+    if not isfolder(folder) then
+        makefolder(folder)
+    end
+end
+
+-- Theme
+local theme = {
+    accent = Color3.fromRGB(134, 87, 255),
+    lightcontrast = Color3.fromRGB(30, 30, 30),
+    darkcontrast = Color3.fromRGB(22, 22, 22),
+    outline = Color3.fromRGB(0, 0, 0),
+    inline = Color3.fromRGB(50, 50, 50),
+    textcolor = Color3.fromRGB(255, 255, 255),
+    textborder = Color3.fromRGB(0, 0, 0),
+    cursoroutline = Color3.fromRGB(10, 10, 10),
+    font = Drawing.Fonts.Plex,
+    textsize = 13
 }
 
 -- Utility Functions
-local Utility = {}
+local utility = {}
 
-function Utility.Create(instanceType, properties)
-    local instance = Instance.new(instanceType)
-    for property, value in pairs(properties or {}) do
-        if property ~= "Parent" then
-            instance[property] = value
+function utility.Size(xScale, xOffset, yScale, yOffset, instance)
+    if instance then
+        local x = xScale * instance.Size.X + xOffset
+        local y = yScale * instance.Size.Y + yOffset
+        return Vector2.new(x, y)
+    else
+        local vx, vy = workspace.CurrentCamera.ViewportSize.X, workspace.CurrentCamera.ViewportSize.Y
+        local x = xScale * vx + xOffset
+        local y = yScale * vy + yOffset
+        return Vector2.new(x, y)
+    end
+end
+
+function utility.Position(xScale, xOffset, yScale, yOffset, instance)
+    if instance then
+        local x = instance.Position.X + xScale * instance.Size.X + xOffset
+        local y = instance.Position.Y + yScale * instance.Size.Y + yOffset
+        return Vector2.new(x, y)
+    else
+        local vx, vy = workspace.CurrentCamera.ViewportSize.X, workspace.CurrentCamera.ViewportSize.Y
+        local x = xScale * vx + xOffset
+        local y = yScale * vy + yOffset
+        return Vector2.new(x, y)
+    end
+end
+
+function utility.Create(instanceType, instanceOffset, instanceProperties, instanceParent)
+    instanceType = instanceType or "Frame"
+    instanceOffset = instanceOffset or Vector2.new(0, 0)
+    instanceProperties = instanceProperties or {}
+    local instanceHidden = false
+    local instance = nil
+
+    if instanceType == "Frame" or instanceType == "frame" then
+        local frame = Drawing.new("Square")
+        frame.Visible = true
+        frame.Filled = true
+        frame.Thickness = 0
+        frame.Color = Color3.fromRGB(255, 255, 255)
+        frame.Size = Vector2.new(100, 100)
+        frame.Position = Vector2.new(0, 0)
+        frame.ZIndex = 1000
+        frame.Transparency = library.shared.initialized and 1 or 0
+        instance = frame
+    elseif instanceType == "TextLabel" or instanceType == "textlabel" then
+        local text = Drawing.new("Text")
+        text.Font = Drawing.Fonts.Plex
+        text.Visible = true
+        text.Outline = true
+        text.Center = false
+        text.Color = Color3.fromRGB(255, 255, 255)
+        text.ZIndex = 1000
+        text.Transparency = library.shared.initialized and 1 or 0
+        instance = text
+    elseif instanceType == "Triangle" or instanceType == "triangle" then
+        local tri = Drawing.new("Triangle")
+        tri.Visible = true
+        tri.Filled = true
+        tri.Thickness = 0
+        tri.Color = Color3.fromRGB(255, 255, 255)
+        tri.ZIndex = 1000
+        tri.Transparency = library.shared.initialized and 1 or 0
+        instance = tri
+    elseif instanceType == "Image" or instanceType == "image" then
+        local image = Drawing.new("Image")
+        image.Size = Vector2.new(12, 19)
+        image.Position = Vector2.new(0, 0)
+        image.Visible = true
+        image.ZIndex = 1000
+        image.Transparency = library.shared.initialized and 1 or 0
+        instance = image
+    elseif instanceType == "Circle" or instanceType == "circle" then
+        local circle = Drawing.new("Circle")
+        circle.Visible = false
+        circle.Color = Color3.fromRGB(255, 0, 0)
+        circle.Thickness = 1
+        circle.NumSides = 30
+        circle.Filled = true
+        circle.ZIndex = 1000
+        circle.Radius = 50
+        circle.Transparency = library.shared.initialized and 1 or 0
+        instance = circle
+    elseif instanceType == "Line" or instanceType == "line" then
+        local line = Drawing.new("Line")
+        line.Visible = false
+        line.Color = Color3.fromRGB(255, 255, 255)
+        line.Thickness = 1.5
+        line.ZIndex = 1000
+        line.Transparency = library.shared.initialized and 1 or 0
+        instance = line
+    end
+
+    if instance then
+        for i, v in pairs(instanceProperties) do
+            if i == "Hidden" or i == "hidden" then
+                instanceHidden = v
+            else
+                if library.shared.initialized then
+                    instance[i] = v
+                elseif i ~= "Transparency" then
+                    instance[i] = v
+                end
+            end
+        end
+
+        if not instanceHidden then
+            library.drawings[#library.drawings + 1] = {instance, instanceOffset, instanceProperties.Transparency or 1}
+        else
+            library.hidden[#library.hidden + 1] = {instance, instanceOffset, instanceProperties.Transparency or 1}
+        end
+
+        if instanceParent then
+            instanceParent[#instanceParent + 1] = instance
         end
     end
-    if properties and properties.Parent then
-        instance.Parent = properties.Parent
-    end
+
     return instance
 end
 
-function Utility.Tween(object, time, properties, style, direction)
-    local tween = TweenService:Create(
-        object,
-        TweenInfo.new(time, style or Enum.EasingStyle.Quad, direction or Enum.EasingDirection.Out),
-        properties
-    )
-    tween:Play()
-    return tween
+function utility.Remove(instance, hidden)
+    library.colors[instance] = nil
+    for i, v in pairs(hidden and library.hidden or library.drawings) do
+        if v[1] == instance then
+            v[1] = nil
+            v[2] = nil
+            table.remove(hidden and library.hidden or library.drawings, i)
+            break
+        end
+    end
+    if instance.__OBJECT_EXISTS then
+        instance:Remove()
+    end
 end
 
-function Utility.Dragify(frame, dragFrame)
-    local dragging, dragInput, dragStart, startPos
+function utility.Connection(connectionType, connectionCallback)
+    local connection = connectionType:Connect(connectionCallback)
+    library.connections[#library.connections + 1] = connection
+    return connection
+end
 
-    local function update(input)
-        local delta = input.Position - dragStart
-        frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+function utility.Disconnect(connection)
+    for i, v in pairs(library.connections) do
+        if v == connection then
+            library.connections[i] = nil
+            v:Disconnect()
+        end
     end
+end
 
-    dragFrame.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = true
-            dragStart = input.Position
-            startPos = frame.Position
+function utility.MouseLocation()
+    return UserInputService:GetMouseLocation()
+end
 
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                end
+function utility.MouseOverDrawing(values, valuesAdd)
+    valuesAdd = valuesAdd or {}
+    values = {
+        values[1] or 0 + (valuesAdd[1] or 0),
+        values[2] or 0 + (valuesAdd[2] or 0),
+        values[3] or 0 + (valuesAdd[3] or 0),
+        values[4] or 0 + (valuesAdd[4] or 0)
+    }
+    local mouseLocation = utility.MouseLocation()
+    return mouseLocation.X >= values[1] and mouseLocation.X <= values[3] and mouseLocation.Y >= values[2] and mouseLocation.Y <= values[4]
+end
+
+function utility.GetTextBounds(text, textSize, font)
+    local textbounds = Vector2.new(0, 0)
+    local textlabel = utility.Create("TextLabel", Vector2.new(0, 0), {
+        Text = text,
+        Size = textSize,
+        Font = font,
+        Hidden = true
+    })
+    textbounds = textlabel.TextBounds
+    utility.Remove(textlabel, true)
+    return textbounds
+end
+
+function utility.GetScreenSize()
+    return workspace.CurrentCamera.ViewportSize
+end
+
+function utility.LoadImage(instance, imageName, imageLink)
+    local data
+    if isfile(library.folders.assets .. "/" .. imageName .. ".png") then
+        data = readfile(library.folders.assets .. "/" .. imageName .. ".png")
+    else
+        if imageLink then
+            local success, result = pcall(function()
+                return game:HttpGet(imageLink)
             end)
-        end
-    end)
-
-    dragFrame.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement then
-            dragInput = input
-        end
-    end)
-
-    UserInputService.InputChanged:Connect(function(input)
-        if input == dragInput and dragging then
-            update(input)
-        end
-    end)
-end
-
-function Utility.GetTextBounds(text, font, size)
-    return TextService:GetTextSize(text, size, font, Vector2.new(math.huge, math.huge))
-end
-
-function Utility.RippleEffect(button, x, y)
-    local ripple = Utility.Create("Frame", {
-        Name = "Ripple",
-        Parent = button,
-        BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-        BackgroundTransparency = 0.7,
-        BorderSizePixel = 0,
-        Position = UDim2.new(0, x - button.AbsolutePosition.X, 0, y - button.AbsolutePosition.Y),
-        Size = UDim2.new(0, 0, 0, 0),
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        ZIndex = button.ZIndex + 1
-    })
-
-    Utility.Create("UICorner", {
-        Parent = ripple,
-        CornerRadius = UDim.new(1, 0)
-    })
-
-    local size = math.max(button.AbsoluteSize.X, button.AbsoluteSize.Y) * 2
-    Utility.Tween(ripple, 0.5, {Size = UDim2.new(0, size, 0, size), BackgroundTransparency = 1})
-
-    task.delay(0.5, function()
-        ripple:Destroy()
-    end)
-end
-
--- Debug Logger
-function NexusLib:Log(message, logType)
-    logType = logType or "INFO"
-    local timestamp = os.date("%H:%M:%S")
-    local logEntry = string.format("[%s] [%s] %s", timestamp, logType, message)
-    table.insert(self.DebugLogs, logEntry)
-
-    if self.Settings.DebugMode then
-        print("[NexusLib]", logEntry)
-    end
-
-    -- Update debug window if open
-    if self.DebugWindow and self.DebugWindow.LogList then
-        self:UpdateDebugLogs()
-    end
-end
-
-function NexusLib:UpdateDebugLogs()
-    if not self.DebugWindow or not self.DebugWindow.LogList then return end
-
-    for _, child in pairs(self.DebugWindow.LogList:GetChildren()) do
-        if child:IsA("TextLabel") then
-            child:Destroy()
-        end
-    end
-
-    local startIndex = math.max(1, #self.DebugLogs - 49)
-    for i = startIndex, #self.DebugLogs do
-        local log = self.DebugLogs[i]
-        Utility.Create("TextLabel", {
-            Parent = self.DebugWindow.LogList,
-            BackgroundTransparency = 1,
-            Size = UDim2.new(1, -10, 0, 16),
-            Font = Enum.Font.Code,
-            Text = log,
-            TextColor3 = log:find("ERROR") and Color3.fromRGB(255, 100, 100) or 
-                         log:find("WARN") and Color3.fromRGB(255, 200, 100) or
-                         Color3.fromRGB(200, 200, 200),
-            TextSize = 12,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            TextWrapped = true
-        })
-    end
-end
-
--- Create Debug Window
-function NexusLib:CreateDebugWindow()
-    if self.DebugWindow and self.DebugWindow.Main then
-        self.DebugWindow.Main.Visible = not self.DebugWindow.Main.Visible
-        return self.DebugWindow
-    end
-
-    self:Log("Creating Debug Window", "DEBUG")
-
-    local debugWindow = {}
-
-    debugWindow.Main = Utility.Create("Frame", {
-        Name = "NexusLib_Debug",
-        Parent = self.ScreenGui,
-        BackgroundColor3 = Color3.fromRGB(20, 20, 20),
-        BorderSizePixel = 0,
-        Position = UDim2.new(0, 10, 0, 10),
-        Size = UDim2.new(0, 400, 0, 300),
-        Visible = true
-    })
-
-    Utility.Create("UICorner", {Parent = debugWindow.Main, CornerRadius = UDim.new(0, 6)})
-    Utility.Create("UIStroke", {Parent = debugWindow.Main, Color = self.Theme.Border, Thickness = 1})
-
-    -- Title Bar
-    local titleBar = Utility.Create("Frame", {
-        Parent = debugWindow.Main,
-        BackgroundColor3 = self.Theme.Accent,
-        BorderSizePixel = 0,
-        Size = UDim2.new(1, 0, 0, 30)
-    })
-    Utility.Create("UICorner", {Parent = titleBar, CornerRadius = UDim.new(0, 6)})
-
-    -- Fix corner overlap
-    Utility.Create("Frame", {
-        Parent = titleBar,
-        BackgroundColor3 = self.Theme.Accent,
-        BorderSizePixel = 0,
-        Position = UDim2.new(0, 0, 1, -6),
-        Size = UDim2.new(1, 0, 0, 6)
-    })
-
-    Utility.Create("TextLabel", {
-        Parent = titleBar,
-        BackgroundTransparency = 1,
-        Position = UDim2.new(0, 10, 0, 0),
-        Size = UDim2.new(1, -60, 1, 0),
-        Font = Enum.Font.GothamBold,
-        Text = "NexusLib Debug Console",
-        TextColor3 = Color3.fromRGB(255, 255, 255),
-        TextSize = 14,
-        TextXAlignment = Enum.TextXAlignment.Left
-    })
-
-    -- Close Button
-    local closeBtn = Utility.Create("TextButton", {
-        Parent = titleBar,
-        BackgroundColor3 = Color3.fromRGB(255, 80, 80),
-        Position = UDim2.new(1, -35, 0.5, -10),
-        Size = UDim2.new(0, 20, 0, 20),
-        Font = Enum.Font.GothamBold,
-        Text = "X",
-        TextColor3 = Color3.fromRGB(255, 255, 255),
-        TextSize = 12
-    })
-    Utility.Create("UICorner", {Parent = closeBtn, CornerRadius = UDim.new(0, 4)})
-
-    closeBtn.MouseButton1Click:Connect(function()
-        debugWindow.Main.Visible = false
-    end)
-
-    -- Stats Panel
-    local statsPanel = Utility.Create("Frame", {
-        Parent = debugWindow.Main,
-        BackgroundColor3 = Color3.fromRGB(30, 30, 30),
-        BorderSizePixel = 0,
-        Position = UDim2.new(0, 5, 0, 35),
-        Size = UDim2.new(1, -10, 0, 40)
-    })
-    Utility.Create("UICorner", {Parent = statsPanel, CornerRadius = UDim.new(0, 4)})
-
-    debugWindow.StatsLabel = Utility.Create("TextLabel", {
-        Parent = statsPanel,
-        BackgroundTransparency = 1,
-        Position = UDim2.new(0, 10, 0, 0),
-        Size = UDim2.new(1, -20, 1, 0),
-        Font = Enum.Font.Code,
-        Text = "Windows: 0 | Flags: 0 | Connections: 0 | Logs: 0",
-        TextColor3 = Color3.fromRGB(150, 255, 150),
-        TextSize = 12,
-        TextXAlignment = Enum.TextXAlignment.Left
-    })
-
-    -- Log Container
-    local logContainer = Utility.Create("ScrollingFrame", {
-        Parent = debugWindow.Main,
-        BackgroundColor3 = Color3.fromRGB(15, 15, 15),
-        BorderSizePixel = 0,
-        Position = UDim2.new(0, 5, 0, 80),
-        Size = UDim2.new(1, -10, 1, -115),
-        ScrollBarThickness = 4,
-        ScrollBarImageColor3 = self.Theme.Accent,
-        CanvasSize = UDim2.new(0, 0, 0, 0),
-        AutomaticCanvasSize = Enum.AutomaticSize.Y
-    })
-    Utility.Create("UICorner", {Parent = logContainer, CornerRadius = UDim.new(0, 4)})
-    Utility.Create("UIListLayout", {Parent = logContainer, Padding = UDim.new(0, 2)})
-    Utility.Create("UIPadding", {Parent = logContainer, PaddingTop = UDim.new(0, 5), PaddingLeft = UDim.new(0, 5)})
-
-    debugWindow.LogList = logContainer
-
-    -- Clear Button
-    local clearBtn = Utility.Create("TextButton", {
-        Parent = debugWindow.Main,
-        BackgroundColor3 = Color3.fromRGB(60, 60, 60),
-        Position = UDim2.new(0, 5, 1, -30),
-        Size = UDim2.new(0, 80, 0, 25),
-        Font = Enum.Font.Gotham,
-        Text = "Clear Logs",
-        TextColor3 = Color3.fromRGB(255, 255, 255),
-        TextSize = 12
-    })
-    Utility.Create("UICorner", {Parent = clearBtn, CornerRadius = UDim.new(0, 4)})
-
-    clearBtn.MouseButton1Click:Connect(function()
-        self.DebugLogs = {}
-        self:UpdateDebugLogs()
-        self:Log("Logs cleared", "INFO")
-    end)
-
-    Utility.Dragify(debugWindow.Main, titleBar)
-
-    -- Update stats periodically
-    task.spawn(function()
-        while debugWindow.Main and debugWindow.Main.Parent do
-            if debugWindow.StatsLabel then
-                local flagCount = 0
-                for _ in pairs(self.Flags) do flagCount = flagCount + 1 end
-                debugWindow.StatsLabel.Text = string.format(
-                    "Windows: %d | Flags: %d | Connections: %d | Logs: %d",
-                    #self.Windows, flagCount, #self.Connections, #self.DebugLogs
-                )
+            if success and result then
+                data = result
+                pcall(function()
+                    writefile(library.folders.assets .. "/" .. imageName .. ".png", data)
+                end)
             end
-            task.wait(0.5)
         end
-    end)
-
-    self.DebugWindow = debugWindow
-    self:UpdateDebugLogs()
-
-    return debugWindow
-end
-
--- Notification System
-function NexusLib:Notify(options)
-    options = options or {}
-    local title = options.Title or "Notification"
-    local content = options.Content or ""
-    local duration = options.Duration or 5
-    local notifType = options.Type or "Info"
-
-    self:Log("Notification: " .. title .. " - " .. content, "NOTIFY")
-
-    local notifColor = notifType == "Success" and Color3.fromRGB(100, 255, 100) or
-                       notifType == "Error" and Color3.fromRGB(255, 100, 100) or
-                       notifType == "Warning" and Color3.fromRGB(255, 200, 100) or
-                       self.Theme.Accent
-
-    local notifFrame = Utility.Create("Frame", {
-        Parent = self.NotificationContainer,
-        BackgroundColor3 = Color3.fromRGB(25, 25, 25),
-        BorderSizePixel = 0,
-        Size = UDim2.new(1, 0, 0, 60),
-        Position = UDim2.new(1, 300, 0, 0)
-    })
-    Utility.Create("UICorner", {Parent = notifFrame, CornerRadius = UDim.new(0, 6)})
-    Utility.Create("UIStroke", {Parent = notifFrame, Color = notifColor, Thickness = 1})
-
-    -- Accent bar
-    local accentBar = Utility.Create("Frame", {
-        Parent = notifFrame,
-        BackgroundColor3 = notifColor,
-        BorderSizePixel = 0,
-        Size = UDim2.new(0, 4, 1, 0)
-    })
-    Utility.Create("UICorner", {Parent = accentBar, CornerRadius = UDim.new(0, 6)})
-
-    Utility.Create("TextLabel", {
-        Parent = notifFrame,
-        BackgroundTransparency = 1,
-        Position = UDim2.new(0, 15, 0, 5),
-        Size = UDim2.new(1, -20, 0, 20),
-        Font = Enum.Font.GothamBold,
-        Text = title,
-        TextColor3 = Color3.fromRGB(255, 255, 255),
-        TextSize = 14,
-        TextXAlignment = Enum.TextXAlignment.Left
-    })
-
-    Utility.Create("TextLabel", {
-        Parent = notifFrame,
-        BackgroundTransparency = 1,
-        Position = UDim2.new(0, 15, 0, 25),
-        Size = UDim2.new(1, -20, 0, 30),
-        Font = Enum.Font.Gotham,
-        Text = content,
-        TextColor3 = Color3.fromRGB(180, 180, 180),
-        TextSize = 12,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        TextWrapped = true
-    })
-
-    -- Animate in
-    Utility.Tween(notifFrame, 0.3, {Position = UDim2.new(0, 0, 0, 0)})
-
-    -- Progress bar
-    local progressBar = Utility.Create("Frame", {
-        Parent = notifFrame,
-        BackgroundColor3 = notifColor,
-        BorderSizePixel = 0,
-        Position = UDim2.new(0, 0, 1, -3),
-        Size = UDim2.new(1, 0, 0, 3)
-    })
-
-    Utility.Tween(progressBar, duration, {Size = UDim2.new(0, 0, 0, 3)})
-
-    task.delay(duration, function()
-        Utility.Tween(notifFrame, 0.3, {Position = UDim2.new(1, 300, 0, 0)})
-        task.delay(0.3, function()
-            notifFrame:Destroy()
+    end
+    if data and instance then
+        pcall(function()
+            instance.Data = data
         end)
-    end)
+    end
 end
 
--- Config System
-function NexusLib:SaveConfig(name)
-    local configData = {}
+function utility.Lerp(instance, instanceTo, instanceTime)
+    local currentTime = 0
+    local currentIndex = {}
+    local connection
 
-    for flag, value in pairs(self.Flags) do
-        if typeof(value) == "Color3" then
-            configData[flag] = {Type = "Color3", R = value.R, G = value.G, B = value.B}
-        elseif typeof(value) == "EnumItem" then
-            configData[flag] = {Type = "Enum", Value = tostring(value)}
+    for i, v in pairs(instanceTo) do
+        currentIndex[i] = instance[i]
+    end
+
+    local function lerp()
+        for i, v in pairs(instanceTo) do
+            if instance.__OBJECT_EXISTS then
+                if typeof(v) == "number" then
+                    instance[i] = currentIndex[i] + (v - currentIndex[i]) * (currentTime / instanceTime)
+                elseif typeof(v) == "Color3" then
+                    instance[i] = currentIndex[i]:Lerp(v, currentTime / instanceTime)
+                elseif typeof(v) == "Vector2" then
+                    instance[i] = currentIndex[i]:Lerp(v, currentTime / instanceTime)
+                end
+            end
+        end
+    end
+
+    connection = RunService.RenderStepped:Connect(function(delta)
+        if currentTime < instanceTime then
+            currentTime = currentTime + delta
+            lerp()
         else
-            configData[flag] = value
-        end
-    end
-
-    local success, err = pcall(function()
-        if not isfolder(self.Settings.ConfigFolder) then
-            makefolder(self.Settings.ConfigFolder)
-        end
-        writefile(self.Settings.ConfigFolder .. "/" .. name .. ".json", HttpService:JSONEncode(configData))
-    end)
-
-    if success then
-        self:Log("Config saved: " .. name, "INFO")
-        self:Notify({Title = "Config Saved", Content = "Saved config: " .. name, Type = "Success", Duration = 3})
-    else
-        self:Log("Failed to save config: " .. tostring(err), "ERROR")
-        self:Notify({Title = "Error", Content = "Failed to save config", Type = "Error", Duration = 3})
-    end
-end
-
-function NexusLib:LoadConfig(name)
-    local success, data = pcall(function()
-        return HttpService:JSONDecode(readfile(self.Settings.ConfigFolder .. "/" .. name .. ".json"))
-    end)
-
-    if success and data then
-        for flag, value in pairs(data) do
-            if typeof(value) == "table" and value.Type == "Color3" then
-                self.Flags[flag] = Color3.new(value.R, value.G, value.B)
-            else
-                self.Flags[flag] = value
-            end
-        end
-        self:Log("Config loaded: " .. name, "INFO")
-        self:Notify({Title = "Config Loaded", Content = "Loaded config: " .. name, Type = "Success", Duration = 3})
-    else
-        self:Log("Failed to load config: " .. name, "ERROR")
-        self:Notify({Title = "Error", Content = "Failed to load config", Type = "Error", Duration = 3})
-    end
-end
-
-function NexusLib:GetConfigs()
-    local configs = {}
-    pcall(function()
-        if isfolder(self.Settings.ConfigFolder) then
-            for _, file in pairs(listfiles(self.Settings.ConfigFolder)) do
-                if file:sub(-5) == ".json" then
-                    local name = file:gsub(self.Settings.ConfigFolder .. "/", ""):gsub(".json", "")
-                    table.insert(configs, name)
+            for i, v in pairs(instanceTo) do
+                if instance.__OBJECT_EXISTS then
+                    instance[i] = v
                 end
             end
+            connection:Disconnect()
         end
     end)
-    return configs
 end
 
--- Initialize Library
-function NexusLib:Init()
-    self:Log("Initializing NexusLib...", "INFO")
+-- Debug Console
+local debugConsole = {
+    logs = {},
+    visible = false,
+    maxLogs = 50
+}
 
-    -- Create ScreenGui
-    self.ScreenGui = Utility.Create("ScreenGui", {
-        Name = "NexusLib_" .. tostring(math.random(100000, 999999)),
-        Parent = CoreGui,
-        ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-        ResetOnSpawn = false
-    })
-
-    -- Protect GUI if possible
-    pcall(function()
-        if syn and syn.protect_gui then
-            syn.protect_gui(self.ScreenGui)
-        end
-    end)
-
-    -- Notification Container
-    self.NotificationContainer = Utility.Create("Frame", {
-        Parent = self.ScreenGui,
-        BackgroundTransparency = 1,
-        Position = UDim2.new(1, -270, 0, 10),
-        Size = UDim2.new(0, 260, 1, -20)
-    })
-    Utility.Create("UIListLayout", {
-        Parent = self.NotificationContainer,
-        Padding = UDim.new(0, 5),
-        SortOrder = Enum.SortOrder.LayoutOrder
-    })
-
-    -- Toggle Key Handler
-    local connection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-        if not gameProcessed and input.KeyCode == self.Settings.ToggleKey then
-            self.Open = not self.Open
-            for _, window in pairs(self.Windows) do
-                if window.Main then
-                    window.Main.Visible = self.Open
-                end
-            end
-        end
-    end)
-    table.insert(self.Connections, connection)
-
-    self:Log("NexusLib initialized successfully", "INFO")
-
-    return self
+function library:Log(message, level)
+    level = level or "INFO"
+    local timestamp = os.date("%H:%M:%S")
+    local logEntry = {
+        time = timestamp,
+        message = tostring(message),
+        level = level
+    }
+    table.insert(debugConsole.logs, 1, logEntry)
+    if #debugConsole.logs > debugConsole.maxLogs then
+        table.remove(debugConsole.logs)
+    end
 end
 
--- Create Window
-function NexusLib:CreateWindow(options)
-    options = options or {}
+-- Main Library Functions
+function library:New(info)
+    info = info or {}
+    local name = info.name or info.Name or info.title or info.Title or "NexusLib"
+    local size = info.size or info.Size or Vector2.new(550, 400)
+    local accent = info.accent or info.Accent or info.color or info.Color or theme.accent
+
+    theme.accent = accent
 
     local window = {
-        Name = options.Name or "NexusLib Window",
-        Size = options.Size or UDim2.new(0, 550, 0, 400),
-        Tabs = {},
-        CurrentTab = nil
+        pages = {},
+        isVisible = false,
+        uibind = Enum.KeyCode.RightShift,
+        currentPage = nil,
+        fading = false,
+        dragging = false,
+        drag = Vector2.new(0, 0),
+        currentContent = {
+            frame = nil,
+            dropdown = nil,
+            colorpicker = nil,
+            keybind = nil
+        }
     }
 
-    self:Log("Creating window: " .. window.Name, "INFO")
-
-    -- Main Frame
-    window.Main = Utility.Create("Frame", {
-        Name = "Window",
-        Parent = self.ScreenGui,
-        BackgroundColor3 = self.Theme.Background,
-        BorderSizePixel = 0,
-        Position = UDim2.new(0.5, -275, 0.5, -200),
-        Size = window.Size
+    -- Main frame
+    local mainframe = utility.Create("Frame", Vector2.new(0, 0), {
+        Size = utility.Size(0, size.X, 0, size.Y),
+        Position = utility.Position(0.5, -size.X/2, 0.5, -size.Y/2),
+        Color = theme.outline
     })
-    Utility.Create("UICorner", {Parent = window.Main, CornerRadius = UDim.new(0, 8)})
-    Utility.Create("UIStroke", {Parent = window.Main, Color = self.Theme.Border, Thickness = 1})
+    window.mainframe = mainframe
+    library.colors[mainframe] = {Color = "outline"}
 
-    -- Drop Shadow
-    local shadow = Utility.Create("ImageLabel", {
-        Parent = window.Main,
-        BackgroundTransparency = 1,
-        Position = UDim2.new(0, -15, 0, -15),
-        Size = UDim2.new(1, 30, 1, 30),
-        Image = "rbxassetid://5554236805",
-        ImageColor3 = Color3.fromRGB(0, 0, 0),
-        ImageTransparency = 0.5,
-        ScaleType = Enum.ScaleType.Slice,
-        SliceCenter = Rect.new(23, 23, 277, 277),
-        ZIndex = -1
+    -- Accent line
+    local frameinline = utility.Create("Frame", Vector2.new(1, 1), {mainframe}, {
+        Size = utility.Size(1, -2, 0, 2, mainframe),
+        Position = utility.Position(0, 1, 0, 1, mainframe),
+        Color = theme.accent
     })
+    library.colors[frameinline] = {Color = "accent"}
 
-    -- Top Bar
-    local topBar = Utility.Create("Frame", {
-        Parent = window.Main,
-        BackgroundColor3 = self.Theme.DarkBackground,
-        BorderSizePixel = 0,
-        Size = UDim2.new(1, 0, 0, 35)
+    -- Inner frame
+    local innerframe = utility.Create("Frame", Vector2.new(1, 3), {mainframe}, {
+        Size = utility.Size(1, -2, 1, -4, mainframe),
+        Position = utility.Position(0, 1, 0, 3, mainframe),
+        Color = theme.lightcontrast
     })
-    Utility.Create("UICorner", {Parent = topBar, CornerRadius = UDim.new(0, 8)})
-
-    -- Fix corner overlap
-    Utility.Create("Frame", {
-        Parent = topBar,
-        BackgroundColor3 = self.Theme.DarkBackground,
-        BorderSizePixel = 0,
-        Position = UDim2.new(0, 0, 1, -8),
-        Size = UDim2.new(1, 0, 0, 8)
-    })
+    library.colors[innerframe] = {Color = "lightcontrast"}
 
     -- Title
-    Utility.Create("TextLabel", {
-        Parent = topBar,
-        BackgroundTransparency = 1,
-        Position = UDim2.new(0, 15, 0, 0),
-        Size = UDim2.new(0.5, 0, 1, 0),
-        Font = Enum.Font.GothamBold,
-        Text = window.Name,
-        TextColor3 = self.Theme.Text,
-        TextSize = 16,
-        TextXAlignment = Enum.TextXAlignment.Left
+    local title = utility.Create("TextLabel", Vector2.new(8, 8), {innerframe}, {
+        Text = name,
+        Size = theme.textsize,
+        Font = theme.font,
+        Color = theme.textcolor,
+        OutlineColor = theme.textborder,
+        Position = utility.Position(0, 8, 0, 6, innerframe)
     })
+    library.colors[title] = {OutlineColor = "textborder", Color = "textcolor"}
 
-    -- Accent Line
-    Utility.Create("Frame", {
-        Parent = topBar,
-        BackgroundColor3 = self.Theme.Accent,
-        BorderSizePixel = 0,
-        Position = UDim2.new(0, 0, 1, -2),
-        Size = UDim2.new(1, 0, 0, 2)
+    -- Tab holder outline
+    local tabholderoutline = utility.Create("Frame", Vector2.new(8, 28), {innerframe}, {
+        Size = utility.Size(0, 120, 1, -36, innerframe),
+        Position = utility.Position(0, 8, 0, 28, innerframe),
+        Color = theme.outline
     })
+    library.colors[tabholderoutline] = {Color = "outline"}
 
-    Utility.Dragify(window.Main, topBar)
-
-    -- Tab Container
-    window.TabContainer = Utility.Create("Frame", {
-        Parent = window.Main,
-        BackgroundColor3 = self.Theme.DarkBackground,
-        BorderSizePixel = 0,
-        Position = UDim2.new(0, 0, 0, 35),
-        Size = UDim2.new(0, 130, 1, -35)
+    -- Tab holder
+    local tabholder = utility.Create("Frame", Vector2.new(1, 1), {tabholderoutline}, {
+        Size = utility.Size(1, -2, 1, -2, tabholderoutline),
+        Position = utility.Position(0, 1, 0, 1, tabholderoutline),
+        Color = theme.darkcontrast
     })
+    library.colors[tabholder] = {Color = "darkcontrast"}
+    window.tabholder = tabholder
 
-    Utility.Create("UICorner", {Parent = window.TabContainer, CornerRadius = UDim.new(0, 8)})
-
-    -- Fix corner
-    Utility.Create("Frame", {
-        Parent = window.TabContainer,
-        BackgroundColor3 = self.Theme.DarkBackground,
-        BorderSizePixel = 0,
-        Position = UDim2.new(1, -8, 0, 0),
-        Size = UDim2.new(0, 8, 1, 0)
+    -- Content holder outline
+    local contentholderoutline = utility.Create("Frame", Vector2.new(136, 28), {innerframe}, {
+        Size = utility.Size(1, -144, 1, -36, innerframe),
+        Position = utility.Position(0, 136, 0, 28, innerframe),
+        Color = theme.outline
     })
+    library.colors[contentholderoutline] = {Color = "outline"}
 
-    window.TabList = Utility.Create("ScrollingFrame", {
-        Parent = window.TabContainer,
-        BackgroundTransparency = 1,
-        BorderSizePixel = 0,
-        Position = UDim2.new(0, 5, 0, 10),
-        Size = UDim2.new(1, -10, 1, -20),
-        ScrollBarThickness = 2,
-        ScrollBarImageColor3 = self.Theme.Accent,
-        CanvasSize = UDim2.new(0, 0, 0, 0),
-        AutomaticCanvasSize = Enum.AutomaticSize.Y
+    -- Content holder inline
+    local contentholderinline = utility.Create("Frame", Vector2.new(1, 1), {contentholderoutline}, {
+        Size = utility.Size(1, -2, 1, -2, contentholderoutline),
+        Position = utility.Position(0, 1, 0, 1, contentholderoutline),
+        Color = theme.inline
     })
+    library.colors[contentholderinline] = {Color = "inline"}
 
-    Utility.Create("UIListLayout", {
-        Parent = window.TabList,
-        Padding = UDim.new(0, 5),
-        SortOrder = Enum.SortOrder.LayoutOrder
+    -- Content holder
+    local contentholder = utility.Create("Frame", Vector2.new(1, 1), {contentholderinline}, {
+        Size = utility.Size(1, -2, 1, -2, contentholderinline),
+        Position = utility.Position(0, 1, 0, 1, contentholderinline),
+        Color = theme.darkcontrast
     })
+    library.colors[contentholder] = {Color = "darkcontrast"}
+    window.contentholder = contentholder
 
-    -- Content Container
-    window.ContentContainer = Utility.Create("Frame", {
-        Parent = window.Main,
-        BackgroundTransparency = 1,
-        Position = UDim2.new(0, 135, 0, 40),
-        Size = UDim2.new(1, -145, 1, -50)
-    })
-
-    -- Add Tab Method
-    function window:AddTab(options)
-        options = options or {}
-
-        local tab = {
-            Name = options.Name or "Tab",
-            Icon = options.Icon or "",
-            Sections = {},
-            Visible = false
-        }
-
-        NexusLib:Log("Adding tab: " .. tab.Name, "DEBUG")
-
-        -- Tab Button
-        tab.Button = Utility.Create("TextButton", {
-            Parent = window.TabList,
-            BackgroundColor3 = NexusLib.Theme.LightBackground,
-            BorderSizePixel = 0,
-            Size = UDim2.new(1, 0, 0, 35),
-            Font = Enum.Font.Gotham,
-            Text = "  " .. tab.Name,
-            TextColor3 = NexusLib.Theme.SubText,
-            TextSize = 13,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            AutoButtonColor = false
-        })
-        Utility.Create("UICorner", {Parent = tab.Button, CornerRadius = UDim.new(0, 6)})
-        Utility.Create("UIPadding", {Parent = tab.Button, PaddingLeft = UDim.new(0, 10)})
-
-        -- Tab Content
-        tab.Content = Utility.Create("ScrollingFrame", {
-            Parent = window.ContentContainer,
-            BackgroundTransparency = 1,
-            BorderSizePixel = 0,
-            Size = UDim2.new(1, 0, 1, 0),
-            ScrollBarThickness = 3,
-            ScrollBarImageColor3 = NexusLib.Theme.Accent,
-            CanvasSize = UDim2.new(0, 0, 0, 0),
-            AutomaticCanvasSize = Enum.AutomaticSize.Y,
-            Visible = false
-        })
-
-        -- Two column layout
-        tab.LeftColumn = Utility.Create("Frame", {
-            Parent = tab.Content,
-            BackgroundTransparency = 1,
-            Position = UDim2.new(0, 0, 0, 0),
-            Size = UDim2.new(0.5, -5, 0, 0),
-            AutomaticSize = Enum.AutomaticSize.Y
-        })
-        Utility.Create("UIListLayout", {Parent = tab.LeftColumn, Padding = UDim.new(0, 10)})
-
-        tab.RightColumn = Utility.Create("Frame", {
-            Parent = tab.Content,
-            BackgroundTransparency = 1,
-            Position = UDim2.new(0.5, 5, 0, 0),
-            Size = UDim2.new(0.5, -5, 0, 0),
-            AutomaticSize = Enum.AutomaticSize.Y
-        })
-        Utility.Create("UIListLayout", {Parent = tab.RightColumn, Padding = UDim.new(0, 10)})
-
-        -- Tab Selection
-        tab.Button.MouseButton1Click:Connect(function()
-            for _, t in pairs(window.Tabs) do
-                t.Content.Visible = false
-                t.Button.BackgroundColor3 = NexusLib.Theme.LightBackground
-                t.Button.TextColor3 = NexusLib.Theme.SubText
+    -- Window functions
+    function window:Move(vector)
+        for i, v in pairs(library.drawings) do
+            if v[2][2] then
+                v[1].Position = utility.Position(0, v[2][1].X, 0, v[2][1].Y, v[2][2])
+            else
+                v[1].Position = utility.Position(0, vector.X + v[2].X, 0, vector.Y + v[2].Y)
             end
-            tab.Content.Visible = true
-            tab.Button.BackgroundColor3 = NexusLib.Theme.Accent
-            tab.Button.TextColor3 = NexusLib.Theme.Text
-            window.CurrentTab = tab
+        end
+    end
+
+    function window:CloseContent()
+        if window.currentContent.dropdown and window.currentContent.dropdown.open then
+            local dropdown = window.currentContent.dropdown
+            dropdown.open = false
+            for i, v in pairs(dropdown.holder.drawings) do
+                utility.Remove(v)
+            end
+            dropdown.holder.drawings = {}
+            window.currentContent.frame = nil
+            window.currentContent.dropdown = nil
+        elseif window.currentContent.colorpicker and window.currentContent.colorpicker.open then
+            local colorpicker = window.currentContent.colorpicker
+            colorpicker.open = false
+            for i, v in pairs(colorpicker.holder.drawings) do
+                utility.Remove(v)
+            end
+            colorpicker.holder.drawings = {}
+            window.currentContent.frame = nil
+            window.currentContent.colorpicker = nil
+        elseif window.currentContent.keybind and window.currentContent.keybind.open then
+            local modemenu = window.currentContent.keybind.modemenu
+            window.currentContent.keybind.open = false
+            for i, v in pairs(modemenu.drawings) do
+                utility.Remove(v)
+            end
+            modemenu.drawings = {}
+            window.currentContent.frame = nil
+            window.currentContent.keybind = nil
+        end
+    end
+
+    function window:IsOverContent()
+        if window.currentContent.frame and utility.MouseOverDrawing({
+            window.currentContent.frame.Position.X,
+            window.currentContent.frame.Position.Y,
+            window.currentContent.frame.Position.X + window.currentContent.frame.Size.X,
+            window.currentContent.frame.Position.Y + window.currentContent.frame.Size.Y
+        }) then
+            return true
+        end
+        return false
+    end
+
+    function window:Unload()
+        for i, v in pairs(library.connections) do
+            v:Disconnect()
+            v = nil
+        end
+        for i, v in next, library.hidden do
+            if v[1] and v[1].Remove and v[1].__OBJECT_EXISTS then
+                v[1]:Remove()
+            end
+        end
+        for i, v in pairs(library.drawings) do
+            if v[1] and v[1].__OBJECT_EXISTS then
+                v[1]:Remove()
+            end
+        end
+        library.drawings = {}
+        library.hidden = {}
+        library.connections = {}
+        library.began = {}
+        library.ended = {}
+        library.changed = {}
+        UserInputService.MouseIconEnabled = true
+    end
+
+    function window:Fade()
+        window.fading = true
+        window.isVisible = not window.isVisible
+
+        for i, v in pairs(library.drawings) do
+            utility.Lerp(v[1], {Transparency = window.isVisible and v[3] or 0}, 0.25)
+        end
+
+        if window.cursor then
+            window.cursor.cursor.Transparency = window.isVisible and 1 or 0
+            window.cursor.cursorinline.Transparency = window.isVisible and 1 or 0
+        end
+
+        UserInputService.MouseIconEnabled = not window.isVisible
+        window.fading = false
+    end
+
+    function window:Cursor()
+        window.cursor = {}
+
+        local cursor = utility.Create("Triangle", nil, {
+            Color = theme.cursoroutline,
+            Thickness = 2.5,
+            Filled = false,
+            ZIndex = 2000,
+            Hidden = true
+        })
+        window.cursor.cursor = cursor
+        library.colors[cursor] = {Color = "cursoroutline"}
+
+        local cursorinline = utility.Create("Triangle", nil, {
+            Color = theme.accent,
+            Filled = true,
+            Thickness = 0,
+            ZIndex = 2000,
+            Hidden = true
+        })
+        window.cursor.cursorinline = cursorinline
+        library.colors[cursorinline] = {Color = "accent"}
+
+        utility.Connection(RunService.RenderStepped, function()
+            local mouseLocation = utility.MouseLocation()
+            cursor.PointA = Vector2.new(mouseLocation.X, mouseLocation.Y)
+            cursor.PointB = Vector2.new(mouseLocation.X + 12, mouseLocation.Y + 4)
+            cursor.PointC = Vector2.new(mouseLocation.X + 4, mouseLocation.Y + 12)
+            cursorinline.PointA = Vector2.new(mouseLocation.X, mouseLocation.Y)
+            cursorinline.PointB = Vector2.new(mouseLocation.X + 12, mouseLocation.Y + 4)
+            cursorinline.PointC = Vector2.new(mouseLocation.X + 4, mouseLocation.Y + 12)
         end)
 
-        -- Add Section Method
-        function tab:AddSection(options)
-            options = options or {}
+        return window.cursor
+    end
+
+    function window:Watermark(info)
+        window.watermark = {visible = false}
+        info = info or {}
+        local watermarkname = info.name or info.Name or "NexusLib"
+
+        local textbounds = utility.GetTextBounds(watermarkname, theme.textsize, theme.font)
+
+        local watermarkoutline = utility.Create("Frame", Vector2.new(10, 10), {
+            Size = utility.Size(0, textbounds.X + 80, 0, 21),
+            Position = utility.Position(0, 10, 0, 10),
+            Hidden = true,
+            ZIndex = 1010,
+            Color = theme.outline,
+            Visible = window.watermark.visible
+        })
+        window.watermark.outline = watermarkoutline
+        library.colors[watermarkoutline] = {Color = "outline"}
+
+        local watermarkinline = utility.Create("Frame", Vector2.new(1, 1), {watermarkoutline}, {
+            Size = utility.Size(1, -2, 1, -2, watermarkoutline),
+            Position = utility.Position(0, 1, 0, 1, watermarkoutline),
+            Hidden = true,
+            ZIndex = 1010,
+            Color = theme.inline,
+            Visible = window.watermark.visible
+        })
+        library.colors[watermarkinline] = {Color = "inline"}
+
+        local watermarkframe = utility.Create("Frame", Vector2.new(1, 1), {watermarkinline}, {
+            Size = utility.Size(1, -2, 1, -2, watermarkinline),
+            Position = utility.Position(0, 1, 0, 1, watermarkinline),
+            Hidden = true,
+            ZIndex = 1010,
+            Color = theme.lightcontrast,
+            Visible = window.watermark.visible
+        })
+        library.colors[watermarkframe] = {Color = "lightcontrast"}
+
+        local watermarkaccent = utility.Create("Frame", Vector2.new(0, 0), {watermarkframe}, {
+            Size = utility.Size(1, 0, 0, 1, watermarkframe),
+            Position = utility.Position(0, 0, 0, 0, watermarkframe),
+            Hidden = true,
+            ZIndex = 1010,
+            Color = theme.accent,
+            Visible = window.watermark.visible
+        })
+        library.colors[watermarkaccent] = {Color = "accent"}
+
+        local watermarktitle = utility.Create("TextLabel", Vector2.new(6, 4), {watermarkoutline}, {
+            Text = watermarkname .. " | FPS: 0 | Ping: 0",
+            Size = theme.textsize,
+            Font = theme.font,
+            Color = theme.textcolor,
+            OutlineColor = theme.textborder,
+            Hidden = true,
+            ZIndex = 1010,
+            Position = utility.Position(0, 6, 0, 4, watermarkoutline),
+            Visible = window.watermark.visible
+        })
+        library.colors[watermarktitle] = {OutlineColor = "textborder", Color = "textcolor"}
+
+        function window.watermark:UpdateSize()
+            watermarkoutline.Size = utility.Size(0, watermarktitle.TextBounds.X + 12, 0, 21)
+            watermarkinline.Size = utility.Size(1, -2, 1, -2, watermarkoutline)
+            watermarkframe.Size = utility.Size(1, -2, 1, -2, watermarkinline)
+            watermarkaccent.Size = utility.Size(1, 0, 0, 1, watermarkframe)
+        end
+
+        function window.watermark:SetVisible(state)
+            window.watermark.visible = state
+            watermarkoutline.Visible = state
+            watermarkinline.Visible = state
+            watermarkframe.Visible = state
+            watermarkaccent.Visible = state
+            watermarktitle.Visible = state
+        end
+
+        -- FPS counter
+        local lastTick = tick()
+        local frameCount = 0
+        task.spawn(function()
+            while true do
+                frameCount = 0
+                task.wait(1)
+                library.shared.fps = frameCount
+            end
+        end)
+
+        utility.Connection(RunService.RenderStepped, function()
+            frameCount = frameCount + 1
+            local ping = "?"
+            pcall(function()
+                ping = tostring(math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue()))
+            end)
+            library.shared.ping = ping
+
+            if tick() - lastTick >= 0.5 then
+                watermarktitle.Text = watermarkname .. " | FPS: " .. tostring(library.shared.fps) .. " | Ping: " .. tostring(library.shared.ping)
+                window.watermark:UpdateSize()
+                lastTick = tick()
+            end
+        end)
+
+        return window.watermark
+    end
+
+    -- Page creation
+    function window:Page(info)
+        info = info or {}
+        local pagename = info.name or info.Name or info.title or info.Title or "New Page"
+
+        local page = {
+            open = false,
+            sections = {},
+            sectionOffset = {left = 0, right = 0},
+            window = window
+        }
+
+        local tabYOffset = 4
+        for i, v in pairs(window.pages) do
+            tabYOffset = tabYOffset + 22
+        end
+
+        local textbounds = utility.GetTextBounds(pagename, theme.textsize, theme.font)
+
+        -- Tab button outline
+        local taboutline = utility.Create("Frame", Vector2.new(4, tabYOffset), {tabholder}, {
+            Size = utility.Size(1, -8, 0, 20, tabholder),
+            Position = utility.Position(0, 4, 0, tabYOffset, tabholder),
+            Color = theme.outline
+        })
+        page.taboutline = taboutline
+        library.colors[taboutline] = {Color = "outline"}
+
+        -- Tab button
+        local tabbutton = utility.Create("Frame", Vector2.new(1, 1), {taboutline}, {
+            Size = utility.Size(1, -2, 1, -2, taboutline),
+            Position = utility.Position(0, 1, 0, 1, taboutline),
+            Color = theme.lightcontrast
+        })
+        page.tabbutton = tabbutton
+        library.colors[tabbutton] = {Color = "lightcontrast"}
+
+        -- Tab title
+        local tabtitle = utility.Create("TextLabel", Vector2.new(0, 3), {taboutline}, {
+            Text = pagename,
+            Size = theme.textsize,
+            Font = theme.font,
+            Color = theme.textcolor,
+            OutlineColor = theme.textborder,
+            Center = true,
+            Position = utility.Position(0.5, 0, 0, 3, taboutline)
+        })
+        page.tabtitle = tabtitle
+        library.colors[tabtitle] = {OutlineColor = "textborder", Color = "textcolor"}
+
+        -- Content frame (hidden by default)
+        local contentframe = utility.Create("Frame", Vector2.new(4, 4), {contentholder}, {
+            Size = utility.Size(1, -8, 1, -8, contentholder),
+            Position = utility.Position(0, 4, 0, 4, contentholder),
+            Color = theme.darkcontrast,
+            Visible = false,
+            Transparency = 0
+        })
+        page.contentframe = contentframe
+        library.colors[contentframe] = {Color = "darkcontrast"}
+
+        -- Left section holder
+        local leftsection = utility.Create("Frame", Vector2.new(0, 0), {contentframe}, {
+            Size = utility.Size(0.5, -4, 1, 0, contentframe),
+            Position = utility.Position(0, 0, 0, 0, contentframe),
+            Color = theme.darkcontrast,
+            Visible = false,
+            Transparency = 0
+        })
+        page.leftsection = leftsection
+
+        -- Right section holder  
+        local rightsection = utility.Create("Frame", Vector2.new(0, 0), {contentframe}, {
+            Size = utility.Size(0.5, -4, 1, 0, contentframe),
+            Position = utility.Position(0.5, 4, 0, 0, contentframe),
+            Color = theme.darkcontrast,
+            Visible = false,
+            Transparency = 0
+        })
+        page.rightsection = rightsection
+
+        function page:Show()
+            for i, v in pairs(window.pages) do
+                v.contentframe.Visible = false
+                v.leftsection.Visible = false
+                v.rightsection.Visible = false
+                v.tabbutton.Color = theme.lightcontrast
+                for _, sec in pairs(v.sections) do
+                    sec:SetVisible(false)
+                end
+            end
+            page.open = true
+            page.contentframe.Visible = true
+            page.leftsection.Visible = true
+            page.rightsection.Visible = true
+            page.tabbutton.Color = theme.darkcontrast
+            for _, sec in pairs(page.sections) do
+                sec:SetVisible(true)
+            end
+            window.currentPage = page
+        end
+
+        function page:Update()
+            for _, sec in pairs(page.sections) do
+                sec:Update()
+            end
+        end
+
+        -- Section creation
+        function page:Section(info)
+            info = info or {}
+            local sectionname = info.name or info.Name or "Section"
+            local sectionside = (info.side or info.Side or "left"):lower()
+            local sectionsize = info.size or info.Size or 200
 
             local section = {
-                Name = options.Name or "Section",
-                Side = options.Side or "Left"
+                elements = {},
+                elementOffset = 0,
+                page = page
             }
 
-            local parent = section.Side == "Right" and tab.RightColumn or tab.LeftColumn
+            local sideHolder = sectionside == "left" and page.leftsection or page.rightsection
+            local yOffset = sectionside == "left" and page.sectionOffset.left or page.sectionOffset.right
 
-            section.Main = Utility.Create("Frame", {
-                Parent = parent,
-                BackgroundColor3 = NexusLib.Theme.DarkBackground,
-                BorderSizePixel = 0,
-                Size = UDim2.new(1, 0, 0, 0),
-                AutomaticSize = Enum.AutomaticSize.Y
+            -- Section outline
+            local sectionoutline = utility.Create("Frame", Vector2.new(0, yOffset), {sideHolder}, {
+                Size = utility.Size(1, 0, 0, sectionsize, sideHolder),
+                Position = utility.Position(0, 0, 0, yOffset, sideHolder),
+                Color = theme.outline,
+                Visible = page.open
             })
-            Utility.Create("UICorner", {Parent = section.Main, CornerRadius = UDim.new(0, 6)})
-            Utility.Create("UIStroke", {Parent = section.Main, Color = NexusLib.Theme.Border, Thickness = 1})
+            section.sectionoutline = sectionoutline
+            library.colors[sectionoutline] = {Color = "outline"}
 
-            -- Section Title
-            Utility.Create("TextLabel", {
-                Parent = section.Main,
-                BackgroundTransparency = 1,
-                Position = UDim2.new(0, 10, 0, 5),
-                Size = UDim2.new(1, -20, 0, 20),
-                Font = Enum.Font.GothamBold,
-                Text = section.Name,
-                TextColor3 = NexusLib.Theme.Accent,
-                TextSize = 13,
-                TextXAlignment = Enum.TextXAlignment.Left
+            -- Section inline
+            local sectioninline = utility.Create("Frame", Vector2.new(1, 1), {sectionoutline}, {
+                Size = utility.Size(1, -2, 1, -2, sectionoutline),
+                Position = utility.Position(0, 1, 0, 1, sectionoutline),
+                Color = theme.inline,
+                Visible = page.open
             })
+            library.colors[sectioninline] = {Color = "inline"}
 
-            section.Content = Utility.Create("Frame", {
-                Parent = section.Main,
-                BackgroundTransparency = 1,
-                Position = UDim2.new(0, 10, 0, 30),
-                Size = UDim2.new(1, -20, 0, 0),
-                AutomaticSize = Enum.AutomaticSize.Y
+            -- Section frame
+            local sectionframe = utility.Create("Frame", Vector2.new(1, 1), {sectioninline}, {
+                Size = utility.Size(1, -2, 1, -2, sectioninline),
+                Position = utility.Position(0, 1, 0, 1, sectioninline),
+                Color = theme.lightcontrast,
+                Visible = page.open
             })
-            Utility.Create("UIListLayout", {Parent = section.Content, Padding = UDim.new(0, 8)})
-            Utility.Create("UIPadding", {Parent = section.Main, PaddingBottom = UDim.new(0, 10)})
+            section.sectionframe = sectionframe
+            library.colors[sectionframe] = {Color = "lightcontrast"}
 
-            -- Element Methods
-            function section:AddToggle(options)
-                options = options or {}
+            -- Section title background
+            local titlebg = utility.Create("Frame", Vector2.new(8, -6), {sectionframe}, {
+                Size = utility.Size(0, utility.GetTextBounds(sectionname, theme.textsize, theme.font).X + 6, 0, 12, sectionframe),
+                Position = utility.Position(0, 8, 0, -6, sectionframe),
+                Color = theme.lightcontrast,
+                Visible = page.open
+            })
+            library.colors[titlebg] = {Color = "lightcontrast"}
+
+            -- Section title
+            local sectiontitle = utility.Create("TextLabel", Vector2.new(10, -4), {sectionframe}, {
+                Text = sectionname,
+                Size = theme.textsize,
+                Font = theme.font,
+                Color = theme.textcolor,
+                OutlineColor = theme.textborder,
+                Position = utility.Position(0, 11, 0, -4, sectionframe),
+                Visible = page.open
+            })
+            section.sectiontitle = sectiontitle
+            library.colors[sectiontitle] = {OutlineColor = "textborder", Color = "textcolor"}
+
+            -- Update section offset
+            if sectionside == "left" then
+                page.sectionOffset.left = page.sectionOffset.left + sectionsize + 8
+            else
+                page.sectionOffset.right = page.sectionOffset.right + sectionsize + 8
+            end
+
+            function section:SetVisible(state)
+                sectionoutline.Visible = state
+                sectioninline.Visible = state
+                sectionframe.Visible = state
+                titlebg.Visible = state
+                sectiontitle.Visible = state
+                for _, elem in pairs(section.elements) do
+                    if elem.SetVisible then
+                        elem:SetVisible(state)
+                    end
+                end
+            end
+
+            function section:Update()
+                local totalHeight = 16
+                for _, elem in pairs(section.elements) do
+                    if elem.GetHeight then
+                        totalHeight = totalHeight + elem:GetHeight() + 6
+                    end
+                end
+                sectionoutline.Size = utility.Size(1, 0, 0, math.max(totalHeight, 50), sideHolder)
+            end
+
+            -- Toggle element
+            function section:Toggle(info)
+                info = info or {}
+                local togglename = info.name or info.Name or "Toggle"
+                local toggledefault = info.default or info.Default or false
+                local toggleflag = info.flag or info.Flag or info.pointer or info.Pointer
+                local togglecallback = info.callback or info.Callback or function() end
+
                 local toggle = {
-                    Name = options.Name or "Toggle",
-                    Default = options.Default or false,
-                    Flag = options.Flag,
-                    Callback = options.Callback or function() end
+                    value = toggledefault,
+                    axis = section.elementOffset + 14
                 }
 
-                if toggle.Flag then
-                    NexusLib.Flags[toggle.Flag] = toggle.Default
+                -- Toggle holder
+                local toggleholder = utility.Create("Frame", Vector2.new(8, toggle.axis), {sectionframe}, {
+                    Size = utility.Size(1, -16, 0, 14, sectionframe),
+                    Position = utility.Position(0, 8, 0, toggle.axis, sectionframe),
+                    Color = theme.lightcontrast,
+                    Visible = page.open,
+                    Transparency = 0
+                })
+                toggle.holder = toggleholder
+
+                -- Toggle box outline
+                local toggleoutline = utility.Create("Frame", Vector2.new(0, 1), {toggleholder}, {
+                    Size = utility.Size(0, 10, 0, 10),
+                    Position = utility.Position(0, 0, 0, 1, toggleholder),
+                    Color = theme.outline,
+                    Visible = page.open
+                })
+                library.colors[toggleoutline] = {Color = "outline"}
+
+                -- Toggle box
+                local togglebox = utility.Create("Frame", Vector2.new(1, 1), {toggleoutline}, {
+                    Size = utility.Size(1, -2, 1, -2, toggleoutline),
+                    Position = utility.Position(0, 1, 0, 1, toggleoutline),
+                    Color = toggledefault and theme.accent or theme.darkcontrast,
+                    Visible = page.open
+                })
+                toggle.box = togglebox
+                if not toggledefault then
+                    library.colors[togglebox] = {Color = "darkcontrast"}
                 end
 
-                local holder = Utility.Create("Frame", {
-                    Parent = section.Content,
-                    BackgroundTransparency = 1,
-                    Size = UDim2.new(1, 0, 0, 25)
+                -- Toggle title
+                local toggletitle = utility.Create("TextLabel", Vector2.new(16, 0), {toggleholder}, {
+                    Text = togglename,
+                    Size = theme.textsize,
+                    Font = theme.font,
+                    Color = theme.textcolor,
+                    OutlineColor = theme.textborder,
+                    Position = utility.Position(0, 16, 0, -1, toggleholder),
+                    Visible = page.open
                 })
-
-                local toggleBtn = Utility.Create("Frame", {
-                    Parent = holder,
-                    BackgroundColor3 = toggle.Default and NexusLib.Theme.Accent or NexusLib.Theme.LightBackground,
-                    Position = UDim2.new(1, -40, 0.5, -10),
-                    Size = UDim2.new(0, 40, 0, 20)
-                })
-                Utility.Create("UICorner", {Parent = toggleBtn, CornerRadius = UDim.new(1, 0)})
-
-                local circle = Utility.Create("Frame", {
-                    Parent = toggleBtn,
-                    BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-                    Position = toggle.Default and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8),
-                    Size = UDim2.new(0, 16, 0, 16)
-                })
-                Utility.Create("UICorner", {Parent = circle, CornerRadius = UDim.new(1, 0)})
-
-                Utility.Create("TextLabel", {
-                    Parent = holder,
-                    BackgroundTransparency = 1,
-                    Position = UDim2.new(0, 0, 0, 0),
-                    Size = UDim2.new(1, -50, 1, 0),
-                    Font = Enum.Font.Gotham,
-                    Text = toggle.Name,
-                    TextColor3 = NexusLib.Theme.Text,
-                    TextSize = 13,
-                    TextXAlignment = Enum.TextXAlignment.Left
-                })
-
-                local clickBtn = Utility.Create("TextButton", {
-                    Parent = holder,
-                    BackgroundTransparency = 1,
-                    Size = UDim2.new(1, 0, 1, 0),
-                    Text = ""
-                })
-
-                local enabled = toggle.Default
-
-                clickBtn.MouseButton1Click:Connect(function()
-                    enabled = not enabled
-                    if toggle.Flag then
-                        NexusLib.Flags[toggle.Flag] = enabled
-                    end
-
-                    Utility.Tween(toggleBtn, 0.2, {BackgroundColor3 = enabled and NexusLib.Theme.Accent or NexusLib.Theme.LightBackground})
-                    Utility.Tween(circle, 0.2, {Position = enabled and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)})
-
-                    toggle.Callback(enabled)
-                end)
+                toggle.title = toggletitle
+                library.colors[toggletitle] = {OutlineColor = "textborder", Color = "textcolor"}
 
                 function toggle:Set(value)
-                    enabled = value
-                    if toggle.Flag then
-                        NexusLib.Flags[toggle.Flag] = enabled
+                    toggle.value = value
+                    togglebox.Color = value and theme.accent or theme.darkcontrast
+                    if value then
+                        library.colors[togglebox] = nil
+                    else
+                        library.colors[togglebox] = {Color = "darkcontrast"}
                     end
-                    Utility.Tween(toggleBtn, 0.2, {BackgroundColor3 = enabled and NexusLib.Theme.Accent or NexusLib.Theme.LightBackground})
-                    Utility.Tween(circle, 0.2, {Position = enabled and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)})
-                    toggle.Callback(enabled)
+                    if toggleflag then
+                        library.flags[toggleflag] = value
+                    end
+                    pcall(togglecallback, value)
                 end
 
+                function toggle:Get()
+                    return toggle.value
+                end
+
+                function toggle:SetVisible(state)
+                    toggleholder.Visible = state
+                    toggleoutline.Visible = state
+                    togglebox.Visible = state
+                    toggletitle.Visible = state
+                end
+
+                function toggle:GetHeight()
+                    return 14
+                end
+
+                -- Input handling
+                library.began[#library.began + 1] = function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 and window.isVisible and toggleholder.Visible then
+                        if utility.MouseOverDrawing({
+                            toggleholder.Position.X,
+                            toggleholder.Position.Y,
+                            toggleholder.Position.X + toggleholder.Size.X,
+                            toggleholder.Position.Y + toggleholder.Size.Y
+                        }) and not window:IsOverContent() then
+                            toggle:Set(not toggle.value)
+                        end
+                    end
+                end
+
+                -- Initialize
+                if toggleflag then
+                    library.flags[toggleflag] = toggledefault
+                    library.pointers[toggleflag] = toggle
+                end
+                if toggledefault then
+                    pcall(togglecallback, toggledefault)
+                end
+
+                section.elementOffset = section.elementOffset + 20
+                section.elements[#section.elements + 1] = toggle
                 return toggle
             end
 
-            function section:AddSlider(options)
-                options = options or {}
+            -- Slider element
+            function section:Slider(info)
+                info = info or {}
+                local slidername = info.name or info.Name or "Slider"
+                local slidermin = info.min or info.Min or 0
+                local slidermax = info.max or info.Max or 100
+                local sliderdefault = info.default or info.Default or slidermin
+                local sliderincrement = info.increment or info.Increment or 1
+                local sliderflag = info.flag or info.Flag or info.pointer or info.Pointer
+                local slidercallback = info.callback or info.Callback or function() end
+
                 local slider = {
-                    Name = options.Name or "Slider",
-                    Min = options.Min or 0,
-                    Max = options.Max or 100,
-                    Default = options.Default or 50,
-                    Increment = options.Increment or 1,
-                    Flag = options.Flag,
-                    Callback = options.Callback or function() end
+                    value = sliderdefault,
+                    axis = section.elementOffset + 14,
+                    dragging = false
                 }
 
-                if slider.Flag then
-                    NexusLib.Flags[slider.Flag] = slider.Default
-                end
-
-                local holder = Utility.Create("Frame", {
-                    Parent = section.Content,
-                    BackgroundTransparency = 1,
-                    Size = UDim2.new(1, 0, 0, 40)
+                -- Slider title
+                local slidertitle = utility.Create("TextLabel", Vector2.new(8, slider.axis), {sectionframe}, {
+                    Text = slidername,
+                    Size = theme.textsize,
+                    Font = theme.font,
+                    Color = theme.textcolor,
+                    OutlineColor = theme.textborder,
+                    Position = utility.Position(0, 8, 0, slider.axis, sectionframe),
+                    Visible = page.open
                 })
+                slider.title = slidertitle
+                library.colors[slidertitle] = {OutlineColor = "textborder", Color = "textcolor"}
 
-                Utility.Create("TextLabel", {
-                    Parent = holder,
-                    BackgroundTransparency = 1,
-                    Size = UDim2.new(1, -50, 0, 20),
-                    Font = Enum.Font.Gotham,
-                    Text = slider.Name,
-                    TextColor3 = NexusLib.Theme.Text,
-                    TextSize = 13,
-                    TextXAlignment = Enum.TextXAlignment.Left
+                -- Slider value text
+                local slidervalue = utility.Create("TextLabel", Vector2.new(0, slider.axis), {sectionframe}, {
+                    Text = tostring(sliderdefault),
+                    Size = theme.textsize,
+                    Font = theme.font,
+                    Color = theme.textcolor,
+                    OutlineColor = theme.textborder,
+                    Position = utility.Position(1, -8 - utility.GetTextBounds(tostring(sliderdefault), theme.textsize, theme.font).X, 0, slider.axis, sectionframe),
+                    Visible = page.open
                 })
+                slider.valuetext = slidervalue
+                library.colors[slidervalue] = {OutlineColor = "textborder", Color = "textcolor"}
 
-                local valueLabel = Utility.Create("TextLabel", {
-                    Parent = holder,
-                    BackgroundTransparency = 1,
-                    Position = UDim2.new(1, -45, 0, 0),
-                    Size = UDim2.new(0, 45, 0, 20),
-                    Font = Enum.Font.Gotham,
-                    Text = tostring(slider.Default),
-                    TextColor3 = NexusLib.Theme.SubText,
-                    TextSize = 13,
-                    TextXAlignment = Enum.TextXAlignment.Right
+                -- Slider outline
+                local slideroutline = utility.Create("Frame", Vector2.new(8, slider.axis + 16), {sectionframe}, {
+                    Size = utility.Size(1, -16, 0, 12, sectionframe),
+                    Position = utility.Position(0, 8, 0, slider.axis + 16, sectionframe),
+                    Color = theme.outline,
+                    Visible = page.open
                 })
+                slider.outline = slideroutline
+                library.colors[slideroutline] = {Color = "outline"}
 
-                local sliderBg = Utility.Create("Frame", {
-                    Parent = holder,
-                    BackgroundColor3 = NexusLib.Theme.LightBackground,
-                    Position = UDim2.new(0, 0, 0, 25),
-                    Size = UDim2.new(1, 0, 0, 8)
+                -- Slider background
+                local sliderbg = utility.Create("Frame", Vector2.new(1, 1), {slideroutline}, {
+                    Size = utility.Size(1, -2, 1, -2, slideroutline),
+                    Position = utility.Position(0, 1, 0, 1, slideroutline),
+                    Color = theme.darkcontrast,
+                    Visible = page.open
                 })
-                Utility.Create("UICorner", {Parent = sliderBg, CornerRadius = UDim.new(1, 0)})
+                library.colors[sliderbg] = {Color = "darkcontrast"}
 
-                local sliderFill = Utility.Create("Frame", {
-                    Parent = sliderBg,
-                    BackgroundColor3 = NexusLib.Theme.Accent,
-                    Size = UDim2.new((slider.Default - slider.Min) / (slider.Max - slider.Min), 0, 1, 0)
+                -- Slider fill
+                local percent = (sliderdefault - slidermin) / (slidermax - slidermin)
+                local sliderfill = utility.Create("Frame", Vector2.new(0, 0), {sliderbg}, {
+                    Size = utility.Size(percent, 0, 1, 0, sliderbg),
+                    Position = utility.Position(0, 0, 0, 0, sliderbg),
+                    Color = theme.accent,
+                    Visible = page.open
                 })
-                Utility.Create("UICorner", {Parent = sliderFill, CornerRadius = UDim.new(1, 0)})
-
-                local sliderBtn = Utility.Create("TextButton", {
-                    Parent = sliderBg,
-                    BackgroundTransparency = 1,
-                    Size = UDim2.new(1, 0, 1, 0),
-                    Text = ""
-                })
-
-                local dragging = false
-                local currentValue = slider.Default
-
-                local function updateSlider(input)
-                    local pos = math.clamp((input.Position.X - sliderBg.AbsolutePosition.X) / sliderBg.AbsoluteSize.X, 0, 1)
-                    local value = slider.Min + (slider.Max - slider.Min) * pos
-                    value = math.floor(value / slider.Increment + 0.5) * slider.Increment
-                    value = math.clamp(value, slider.Min, slider.Max)
-
-                    currentValue = value
-                    if slider.Flag then
-                        NexusLib.Flags[slider.Flag] = value
-                    end
-
-                    sliderFill.Size = UDim2.new(pos, 0, 1, 0)
-                    valueLabel.Text = tostring(value)
-                    slider.Callback(value)
-                end
-
-                sliderBtn.MouseButton1Down:Connect(function()
-                    dragging = true
-                end)
-
-                UserInputService.InputEnded:Connect(function(input)
-                    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-                        dragging = false
-                    end
-                end)
-
-                UserInputService.InputChanged:Connect(function(input)
-                    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-                        updateSlider(input)
-                    end
-                end)
-
-                sliderBtn.MouseButton1Down:Connect(function()
-                    updateSlider({Position = Vector3.new(Mouse.X, Mouse.Y, 0)})
-                end)
+                slider.fill = sliderfill
+                library.colors[sliderfill] = {Color = "accent"}
 
                 function slider:Set(value)
-                    currentValue = math.clamp(value, slider.Min, slider.Max)
-                    if slider.Flag then
-                        NexusLib.Flags[slider.Flag] = currentValue
+                    value = math.clamp(value, slidermin, slidermax)
+                    value = math.floor(value / sliderincrement + 0.5) * sliderincrement
+                    slider.value = value
+
+                    local percent = (value - slidermin) / (slidermax - slidermin)
+                    sliderfill.Size = utility.Size(percent, 0, 1, 0, sliderbg)
+                    slidervalue.Text = tostring(value)
+                    slidervalue.Position = utility.Position(1, -8 - utility.GetTextBounds(tostring(value), theme.textsize, theme.font).X, 0, slider.axis, sectionframe)
+
+                    if sliderflag then
+                        library.flags[sliderflag] = value
                     end
-                    local pos = (currentValue - slider.Min) / (slider.Max - slider.Min)
-                    sliderFill.Size = UDim2.new(pos, 0, 1, 0)
-                    valueLabel.Text = tostring(currentValue)
-                    slider.Callback(currentValue)
+                    pcall(slidercallback, value)
                 end
 
+                function slider:Get()
+                    return slider.value
+                end
+
+                function slider:SetVisible(state)
+                    slidertitle.Visible = state
+                    slidervalue.Visible = state
+                    slideroutline.Visible = state
+                    sliderbg.Visible = state
+                    sliderfill.Visible = state
+                end
+
+                function slider:GetHeight()
+                    return 30
+                end
+
+                function slider:Refresh()
+                    if slider.dragging then
+                        local mouseX = utility.MouseLocation().X
+                        local sliderX = slideroutline.Position.X
+                        local sliderWidth = slideroutline.Size.X - 2
+                        local percent = math.clamp((mouseX - sliderX - 1) / sliderWidth, 0, 1)
+                        local value = slidermin + (slidermax - slidermin) * percent
+                        slider:Set(value)
+                    end
+                end
+
+                -- Input handling
+                library.began[#library.began + 1] = function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 and window.isVisible and slideroutline.Visible then
+                        if utility.MouseOverDrawing({
+                            slideroutline.Position.X,
+                            slideroutline.Position.Y,
+                            slideroutline.Position.X + slideroutline.Size.X,
+                            slideroutline.Position.Y + slideroutline.Size.Y
+                        }) and not window:IsOverContent() then
+                            slider.dragging = true
+                            slider:Refresh()
+                        end
+                    end
+                end
+
+                library.ended[#library.ended + 1] = function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                        slider.dragging = false
+                    end
+                end
+
+                library.changed[#library.changed + 1] = function()
+                    if slider.dragging and window.isVisible then
+                        slider:Refresh()
+                    end
+                end
+
+                -- Initialize
+                if sliderflag then
+                    library.flags[sliderflag] = sliderdefault
+                    library.pointers[sliderflag] = slider
+                end
+
+                section.elementOffset = section.elementOffset + 36
+                section.elements[#section.elements + 1] = slider
                 return slider
             end
 
-            function section:AddButton(options)
-                options = options or {}
+            -- Button element
+            function section:Button(info)
+                info = info or {}
+                local buttonname = info.name or info.Name or "Button"
+                local buttoncallback = info.callback or info.Callback or function() end
 
-                local button = Utility.Create("TextButton", {
-                    Parent = section.Content,
-                    BackgroundColor3 = NexusLib.Theme.LightBackground,
-                    Size = UDim2.new(1, 0, 0, 30),
-                    Font = Enum.Font.Gotham,
-                    Text = options.Name or "Button",
-                    TextColor3 = NexusLib.Theme.Text,
-                    TextSize = 13,
-                    AutoButtonColor = false
+                local button = {
+                    axis = section.elementOffset + 14
+                }
+
+                -- Button outline
+                local buttonoutline = utility.Create("Frame", Vector2.new(8, button.axis), {sectionframe}, {
+                    Size = utility.Size(1, -16, 0, 18, sectionframe),
+                    Position = utility.Position(0, 8, 0, button.axis, sectionframe),
+                    Color = theme.outline,
+                    Visible = page.open
                 })
-                Utility.Create("UICorner", {Parent = button, CornerRadius = UDim.new(0, 6)})
+                button.outline = buttonoutline
+                library.colors[buttonoutline] = {Color = "outline"}
 
-                button.MouseEnter:Connect(function()
-                    Utility.Tween(button, 0.2, {BackgroundColor3 = NexusLib.Theme.Accent})
-                end)
+                -- Button inline
+                local buttoninline = utility.Create("Frame", Vector2.new(1, 1), {buttonoutline}, {
+                    Size = utility.Size(1, -2, 1, -2, buttonoutline),
+                    Position = utility.Position(0, 1, 0, 1, buttonoutline),
+                    Color = theme.inline,
+                    Visible = page.open
+                })
+                library.colors[buttoninline] = {Color = "inline"}
 
-                button.MouseLeave:Connect(function()
-                    Utility.Tween(button, 0.2, {BackgroundColor3 = NexusLib.Theme.LightBackground})
-                end)
+                -- Button background
+                local buttonbg = utility.Create("Frame", Vector2.new(1, 1), {buttoninline}, {
+                    Size = utility.Size(1, -2, 1, -2, buttoninline),
+                    Position = utility.Position(0, 1, 0, 1, buttoninline),
+                    Color = theme.lightcontrast,
+                    Visible = page.open
+                })
+                button.bg = buttonbg
+                library.colors[buttonbg] = {Color = "lightcontrast"}
 
-                button.MouseButton1Click:Connect(function()
-                    Utility.RippleEffect(button, Mouse.X, Mouse.Y)
-                    if options.Callback then
-                        options.Callback()
+                -- Button title
+                local buttontitle = utility.Create("TextLabel", Vector2.new(0, 2), {buttonoutline}, {
+                    Text = buttonname,
+                    Size = theme.textsize,
+                    Font = theme.font,
+                    Color = theme.textcolor,
+                    OutlineColor = theme.textborder,
+                    Center = true,
+                    Position = utility.Position(0.5, 0, 0, 2, buttonoutline),
+                    Visible = page.open
+                })
+                button.title = buttontitle
+                library.colors[buttontitle] = {OutlineColor = "textborder", Color = "textcolor"}
+
+                function button:SetVisible(state)
+                    buttonoutline.Visible = state
+                    buttoninline.Visible = state
+                    buttonbg.Visible = state
+                    buttontitle.Visible = state
+                end
+
+                function button:GetHeight()
+                    return 18
+                end
+
+                -- Input handling
+                library.began[#library.began + 1] = function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 and window.isVisible and buttonoutline.Visible then
+                        if utility.MouseOverDrawing({
+                            buttonoutline.Position.X,
+                            buttonoutline.Position.Y,
+                            buttonoutline.Position.X + buttonoutline.Size.X,
+                            buttonoutline.Position.Y + buttonoutline.Size.Y
+                        }) and not window:IsOverContent() then
+                            buttonbg.Color = theme.darkcontrast
+                            pcall(buttoncallback)
+                            task.delay(0.1, function()
+                                if buttonbg.__OBJECT_EXISTS then
+                                    buttonbg.Color = theme.lightcontrast
+                                end
+                            end)
+                        end
                     end
-                end)
+                end
 
+                section.elementOffset = section.elementOffset + 24
+                section.elements[#section.elements + 1] = button
                 return button
             end
 
-            function section:AddDropdown(options)
-                options = options or {}
-                local dropdown = {
-                    Name = options.Name or "Dropdown",
-                    Items = options.Items or {},
-                    Default = options.Default,
-                    Flag = options.Flag,
-                    Callback = options.Callback or function() end,
-                    Open = false
-                }
+            -- Textbox element
+            function section:Textbox(info)
+                info = info or {}
+                local textboxname = info.name or info.Name or "Textbox"
+                local textboxdefault = info.default or info.Default or ""
+                local textboxplaceholder = info.placeholder or info.Placeholder or "Enter text..."
+                local textboxflag = info.flag or info.Flag or info.pointer or info.Pointer
+                local textboxcallback = info.callback or info.Callback or function() end
 
-                local selected = dropdown.Default or (dropdown.Items[1] or "Select...")
-                if dropdown.Flag then
-                    NexusLib.Flags[dropdown.Flag] = selected
-                end
-
-                local holder = Utility.Create("Frame", {
-                    Parent = section.Content,
-                    BackgroundTransparency = 1,
-                    Size = UDim2.new(1, 0, 0, 50),
-                    ClipsDescendants = false
-                })
-
-                Utility.Create("TextLabel", {
-                    Parent = holder,
-                    BackgroundTransparency = 1,
-                    Size = UDim2.new(1, 0, 0, 20),
-                    Font = Enum.Font.Gotham,
-                    Text = dropdown.Name,
-                    TextColor3 = NexusLib.Theme.Text,
-                    TextSize = 13,
-                    TextXAlignment = Enum.TextXAlignment.Left
-                })
-
-                local dropBtn = Utility.Create("TextButton", {
-                    Parent = holder,
-                    BackgroundColor3 = NexusLib.Theme.LightBackground,
-                    Position = UDim2.new(0, 0, 0, 22),
-                    Size = UDim2.new(1, 0, 0, 28),
-                    Font = Enum.Font.Gotham,
-                    Text = "  " .. tostring(selected),
-                    TextColor3 = NexusLib.Theme.Text,
-                    TextSize = 13,
-                    TextXAlignment = Enum.TextXAlignment.Left,
-                    AutoButtonColor = false
-                })
-                Utility.Create("UICorner", {Parent = dropBtn, CornerRadius = UDim.new(0, 6)})
-
-                local itemContainer = Utility.Create("Frame", {
-                    Parent = holder,
-                    BackgroundColor3 = NexusLib.Theme.DarkBackground,
-                    Position = UDim2.new(0, 0, 0, 52),
-                    Size = UDim2.new(1, 0, 0, 0),
-                    ClipsDescendants = true,
-                    ZIndex = 10
-                })
-                Utility.Create("UICorner", {Parent = itemContainer, CornerRadius = UDim.new(0, 6)})
-                Utility.Create("UIStroke", {Parent = itemContainer, Color = NexusLib.Theme.Border, Thickness = 1})
-
-                local itemList = Utility.Create("Frame", {
-                    Parent = itemContainer,
-                    BackgroundTransparency = 1,
-                    Size = UDim2.new(1, 0, 1, 0)
-                })
-                Utility.Create("UIListLayout", {Parent = itemList, Padding = UDim.new(0, 2)})
-                Utility.Create("UIPadding", {Parent = itemList, PaddingTop = UDim.new(0, 5), PaddingLeft = UDim.new(0, 5), PaddingRight = UDim.new(0, 5)})
-
-                local function refreshItems()
-                    for _, child in pairs(itemList:GetChildren()) do
-                        if child:IsA("TextButton") then
-                            child:Destroy()
-                        end
-                    end
-
-                    for _, item in pairs(dropdown.Items) do
-                        local itemBtn = Utility.Create("TextButton", {
-                            Parent = itemList,
-                            BackgroundColor3 = NexusLib.Theme.LightBackground,
-                            Size = UDim2.new(1, 0, 0, 25),
-                            Font = Enum.Font.Gotham,
-                            Text = "  " .. tostring(item),
-                            TextColor3 = NexusLib.Theme.Text,
-                            TextSize = 12,
-                            TextXAlignment = Enum.TextXAlignment.Left,
-                            AutoButtonColor = false,
-                            ZIndex = 11
-                        })
-                        Utility.Create("UICorner", {Parent = itemBtn, CornerRadius = UDim.new(0, 4)})
-
-                        itemBtn.MouseButton1Click:Connect(function()
-                            selected = item
-                            dropBtn.Text = "  " .. tostring(item)
-                            if dropdown.Flag then
-                                NexusLib.Flags[dropdown.Flag] = item
-                            end
-                            dropdown.Callback(item)
-
-                            dropdown.Open = false
-                            Utility.Tween(itemContainer, 0.2, {Size = UDim2.new(1, 0, 0, 0)})
-                            Utility.Tween(holder, 0.2, {Size = UDim2.new(1, 0, 0, 50)})
-                        end)
-                    end
-                end
-
-                refreshItems()
-
-                dropBtn.MouseButton1Click:Connect(function()
-                    dropdown.Open = not dropdown.Open
-                    local itemHeight = #dropdown.Items * 27 + 10
-                    itemHeight = math.min(itemHeight, 150)
-
-                    if dropdown.Open then
-                        Utility.Tween(itemContainer, 0.2, {Size = UDim2.new(1, 0, 0, itemHeight)})
-                        Utility.Tween(holder, 0.2, {Size = UDim2.new(1, 0, 0, 52 + itemHeight)})
-                    else
-                        Utility.Tween(itemContainer, 0.2, {Size = UDim2.new(1, 0, 0, 0)})
-                        Utility.Tween(holder, 0.2, {Size = UDim2.new(1, 0, 0, 50)})
-                    end
-                end)
-
-                function dropdown:Set(value)
-                    if table.find(dropdown.Items, value) then
-                        selected = value
-                        dropBtn.Text = "  " .. tostring(value)
-                        if dropdown.Flag then
-                            NexusLib.Flags[dropdown.Flag] = value
-                        end
-                        dropdown.Callback(value)
-                    end
-                end
-
-                function dropdown:Refresh(items)
-                    dropdown.Items = items
-                    refreshItems()
-                end
-
-                return dropdown
-            end
-
-            function section:AddTextbox(options)
-                options = options or {}
                 local textbox = {
-                    Name = options.Name or "Textbox",
-                    Default = options.Default or "",
-                    Placeholder = options.Placeholder or "Enter text...",
-                    Flag = options.Flag,
-                    Callback = options.Callback or function() end
+                    value = textboxdefault,
+                    axis = section.elementOffset + 14,
+                    focused = false
                 }
 
-                if textbox.Flag then
-                    NexusLib.Flags[textbox.Flag] = textbox.Default
-                end
-
-                local holder = Utility.Create("Frame", {
-                    Parent = section.Content,
-                    BackgroundTransparency = 1,
-                    Size = UDim2.new(1, 0, 0, 50)
+                -- Textbox title
+                local textboxtitle = utility.Create("TextLabel", Vector2.new(8, textbox.axis), {sectionframe}, {
+                    Text = textboxname,
+                    Size = theme.textsize,
+                    Font = theme.font,
+                    Color = theme.textcolor,
+                    OutlineColor = theme.textborder,
+                    Position = utility.Position(0, 8, 0, textbox.axis, sectionframe),
+                    Visible = page.open
                 })
+                textbox.title = textboxtitle
+                library.colors[textboxtitle] = {OutlineColor = "textborder", Color = "textcolor"}
 
-                Utility.Create("TextLabel", {
-                    Parent = holder,
-                    BackgroundTransparency = 1,
-                    Size = UDim2.new(1, 0, 0, 20),
-                    Font = Enum.Font.Gotham,
-                    Text = textbox.Name,
-                    TextColor3 = NexusLib.Theme.Text,
-                    TextSize = 13,
-                    TextXAlignment = Enum.TextXAlignment.Left
+                -- Textbox outline
+                local textboxoutline = utility.Create("Frame", Vector2.new(8, textbox.axis + 16), {sectionframe}, {
+                    Size = utility.Size(1, -16, 0, 18, sectionframe),
+                    Position = utility.Position(0, 8, 0, textbox.axis + 16, sectionframe),
+                    Color = theme.outline,
+                    Visible = page.open
                 })
+                textbox.outline = textboxoutline
+                library.colors[textboxoutline] = {Color = "outline"}
 
-                local input = Utility.Create("TextBox", {
-                    Parent = holder,
-                    BackgroundColor3 = NexusLib.Theme.LightBackground,
-                    Position = UDim2.new(0, 0, 0, 22),
-                    Size = UDim2.new(1, 0, 0, 28),
-                    Font = Enum.Font.Gotham,
-                    Text = textbox.Default,
-                    PlaceholderText = textbox.Placeholder,
-                    TextColor3 = NexusLib.Theme.Text,
-                    PlaceholderColor3 = NexusLib.Theme.SubText,
-                    TextSize = 13,
-                    ClearTextOnFocus = false
+                -- Textbox background
+                local textboxbg = utility.Create("Frame", Vector2.new(1, 1), {textboxoutline}, {
+                    Size = utility.Size(1, -2, 1, -2, textboxoutline),
+                    Position = utility.Position(0, 1, 0, 1, textboxoutline),
+                    Color = theme.darkcontrast,
+                    Visible = page.open
                 })
-                Utility.Create("UICorner", {Parent = input, CornerRadius = UDim.new(0, 6)})
-                Utility.Create("UIPadding", {Parent = input, PaddingLeft = UDim.new(0, 10)})
+                library.colors[textboxbg] = {Color = "darkcontrast"}
 
-                input.FocusLost:Connect(function()
-                    if textbox.Flag then
-                        NexusLib.Flags[textbox.Flag] = input.Text
-                    end
-                    textbox.Callback(input.Text)
-                end)
+                -- Textbox text
+                local textboxtext = utility.Create("TextLabel", Vector2.new(4, 2), {textboxoutline}, {
+                    Text = textboxdefault ~= "" and textboxdefault or textboxplaceholder,
+                    Size = theme.textsize,
+                    Font = theme.font,
+                    Color = textboxdefault ~= "" and theme.textcolor or Color3.fromRGB(150, 150, 150),
+                    OutlineColor = theme.textborder,
+                    Position = utility.Position(0, 4, 0, 2, textboxoutline),
+                    Visible = page.open
+                })
+                textbox.text = textboxtext
 
                 function textbox:Set(value)
-                    input.Text = value
-                    if textbox.Flag then
-                        NexusLib.Flags[textbox.Flag] = value
+                    textbox.value = value
+                    textboxtext.Text = value ~= "" and value or textboxplaceholder
+                    textboxtext.Color = value ~= "" and theme.textcolor or Color3.fromRGB(150, 150, 150)
+                    if textboxflag then
+                        library.flags[textboxflag] = value
                     end
-                    textbox.Callback(value)
+                    pcall(textboxcallback, value)
                 end
 
+                function textbox:Get()
+                    return textbox.value
+                end
+
+                function textbox:SetVisible(state)
+                    textboxtitle.Visible = state
+                    textboxoutline.Visible = state
+                    textboxbg.Visible = state
+                    textboxtext.Visible = state
+                end
+
+                function textbox:GetHeight()
+                    return 36
+                end
+
+                -- Initialize
+                if textboxflag then
+                    library.flags[textboxflag] = textboxdefault
+                    library.pointers[textboxflag] = textbox
+                end
+
+                section.elementOffset = section.elementOffset + 42
+                section.elements[#section.elements + 1] = textbox
                 return textbox
             end
 
-            function section:AddKeybind(options)
-                options = options or {}
-                local keybind = {
-                    Name = options.Name or "Keybind",
-                    Default = options.Default or Enum.KeyCode.Unknown,
-                    Flag = options.Flag,
-                    Callback = options.Callback or function() end
+            -- Dropdown element
+            function section:Dropdown(info)
+                info = info or {}
+                local dropdownname = info.name or info.Name or "Dropdown"
+                local dropdownitems = info.items or info.Items or info.options or info.Options or {}
+                local dropdowndefault = info.default or info.Default or (dropdownitems[1] or "")
+                local dropdownflag = info.flag or info.Flag or info.pointer or info.Pointer
+                local dropdowncallback = info.callback or info.Callback or function() end
+
+                local dropdown = {
+                    value = dropdowndefault,
+                    axis = section.elementOffset + 14,
+                    open = false,
+                    items = dropdownitems,
+                    holder = {drawings = {}, buttons = {}}
                 }
 
-                local currentKey = keybind.Default
-                if keybind.Flag then
-                    NexusLib.Flags[keybind.Flag] = currentKey
+                -- Dropdown title
+                local dropdowntitle = utility.Create("TextLabel", Vector2.new(8, dropdown.axis), {sectionframe}, {
+                    Text = dropdownname,
+                    Size = theme.textsize,
+                    Font = theme.font,
+                    Color = theme.textcolor,
+                    OutlineColor = theme.textborder,
+                    Position = utility.Position(0, 8, 0, dropdown.axis, sectionframe),
+                    Visible = page.open
+                })
+                dropdown.title = dropdowntitle
+                library.colors[dropdowntitle] = {OutlineColor = "textborder", Color = "textcolor"}
+
+                -- Dropdown outline
+                local dropdownoutline = utility.Create("Frame", Vector2.new(8, dropdown.axis + 16), {sectionframe}, {
+                    Size = utility.Size(1, -16, 0, 18, sectionframe),
+                    Position = utility.Position(0, 8, 0, dropdown.axis + 16, sectionframe),
+                    Color = theme.outline,
+                    Visible = page.open
+                })
+                dropdown.outline = dropdownoutline
+                library.colors[dropdownoutline] = {Color = "outline"}
+
+                -- Dropdown inline
+                local dropdowninline = utility.Create("Frame", Vector2.new(1, 1), {dropdownoutline}, {
+                    Size = utility.Size(1, -2, 1, -2, dropdownoutline),
+                    Position = utility.Position(0, 1, 0, 1, dropdownoutline),
+                    Color = theme.inline,
+                    Visible = page.open
+                })
+                library.colors[dropdowninline] = {Color = "inline"}
+
+                -- Dropdown background
+                local dropdownbg = utility.Create("Frame", Vector2.new(1, 1), {dropdowninline}, {
+                    Size = utility.Size(1, -2, 1, -2, dropdowninline),
+                    Position = utility.Position(0, 1, 0, 1, dropdowninline),
+                    Color = theme.lightcontrast,
+                    Visible = page.open
+                })
+                library.colors[dropdownbg] = {Color = "lightcontrast"}
+
+                -- Dropdown text
+                local dropdowntext = utility.Create("TextLabel", Vector2.new(4, 2), {dropdownoutline}, {
+                    Text = dropdowndefault,
+                    Size = theme.textsize,
+                    Font = theme.font,
+                    Color = theme.textcolor,
+                    OutlineColor = theme.textborder,
+                    Position = utility.Position(0, 4, 0, 2, dropdownoutline),
+                    Visible = page.open
+                })
+                dropdown.text = dropdowntext
+                library.colors[dropdowntext] = {OutlineColor = "textborder", Color = "textcolor"}
+
+                -- Arrow indicator
+                local dropdownarrow = utility.Create("TextLabel", Vector2.new(0, 2), {dropdownoutline}, {
+                    Text = "v",
+                    Size = theme.textsize,
+                    Font = theme.font,
+                    Color = theme.textcolor,
+                    OutlineColor = theme.textborder,
+                    Position = utility.Position(1, -12, 0, 2, dropdownoutline),
+                    Visible = page.open
+                })
+                library.colors[dropdownarrow] = {OutlineColor = "textborder", Color = "textcolor"}
+
+                function dropdown:Set(value)
+                    dropdown.value = value
+                    dropdowntext.Text = value
+                    if dropdownflag then
+                        library.flags[dropdownflag] = value
+                    end
+                    pcall(dropdowncallback, value)
                 end
 
-                local holder = Utility.Create("Frame", {
-                    Parent = section.Content,
-                    BackgroundTransparency = 1,
-                    Size = UDim2.new(1, 0, 0, 25)
-                })
+                function dropdown:Get()
+                    return dropdown.value
+                end
 
-                Utility.Create("TextLabel", {
-                    Parent = holder,
-                    BackgroundTransparency = 1,
-                    Size = UDim2.new(1, -70, 1, 0),
-                    Font = Enum.Font.Gotham,
-                    Text = keybind.Name,
-                    TextColor3 = NexusLib.Theme.Text,
-                    TextSize = 13,
-                    TextXAlignment = Enum.TextXAlignment.Left
-                })
+                function dropdown:SetVisible(state)
+                    dropdowntitle.Visible = state
+                    dropdownoutline.Visible = state
+                    dropdowninline.Visible = state
+                    dropdownbg.Visible = state
+                    dropdowntext.Visible = state
+                    dropdownarrow.Visible = state
+                end
 
-                local keyBtn = Utility.Create("TextButton", {
-                    Parent = holder,
-                    BackgroundColor3 = NexusLib.Theme.LightBackground,
-                    Position = UDim2.new(1, -65, 0.5, -12),
-                    Size = UDim2.new(0, 65, 0, 24),
-                    Font = Enum.Font.Gotham,
-                    Text = currentKey.Name or "None",
-                    TextColor3 = NexusLib.Theme.Text,
-                    TextSize = 12,
-                    AutoButtonColor = false
-                })
-                Utility.Create("UICorner", {Parent = keyBtn, CornerRadius = UDim.new(0, 6)})
+                function dropdown:GetHeight()
+                    return 36
+                end
 
-                local listening = false
-
-                keyBtn.MouseButton1Click:Connect(function()
-                    listening = true
-                    keyBtn.Text = "..."
-                end)
-
-                UserInputService.InputBegan:Connect(function(input, gameProcessed)
-                    if listening then
-                        if input.UserInputType == Enum.UserInputType.Keyboard then
-                            currentKey = input.KeyCode
-                            keyBtn.Text = input.KeyCode.Name
-                            if keybind.Flag then
-                                NexusLib.Flags[keybind.Flag] = currentKey
-                            end
-                            listening = false
+                function dropdown:OpenDropdown()
+                    if dropdown.open then
+                        dropdown.open = false
+                        for _, v in pairs(dropdown.holder.drawings) do
+                            utility.Remove(v)
                         end
-                    elseif not gameProcessed and input.KeyCode == currentKey then
-                        keybind.Callback(currentKey)
+                        dropdown.holder.drawings = {}
+                        window.currentContent.frame = nil
+                        window.currentContent.dropdown = nil
+                        return
                     end
-                end)
+
+                    window:CloseContent()
+                    dropdown.open = true
+
+                    local listHeight = math.min(#dropdown.items * 16 + 4, 150)
+
+                    -- List outline
+                    local listoutline = utility.Create("Frame", Vector2.new(0, 18), {dropdownoutline}, {
+                        Size = utility.Size(1, 0, 0, listHeight, dropdownoutline),
+                        Position = utility.Position(0, 0, 1, 2, dropdownoutline),
+                        Color = theme.outline,
+                        ZIndex = 1500,
+                        Visible = true
+                    })
+                    dropdown.holder.drawings[#dropdown.holder.drawings + 1] = listoutline
+
+                    -- List background
+                    local listbg = utility.Create("Frame", Vector2.new(1, 1), {listoutline}, {
+                        Size = utility.Size(1, -2, 1, -2, listoutline),
+                        Position = utility.Position(0, 1, 0, 1, listoutline),
+                        Color = theme.darkcontrast,
+                        ZIndex = 1500,
+                        Visible = true
+                    })
+                    dropdown.holder.drawings[#dropdown.holder.drawings + 1] = listbg
+
+                    window.currentContent.frame = listoutline
+                    window.currentContent.dropdown = dropdown
+
+                    -- Create list items
+                    for i, item in ipairs(dropdown.items) do
+                        local itemY = (i - 1) * 16 + 2
+                        local itemtext = utility.Create("TextLabel", Vector2.new(4, itemY), {listbg}, {
+                            Text = item,
+                            Size = theme.textsize,
+                            Font = theme.font,
+                            Color = item == dropdown.value and theme.accent or theme.textcolor,
+                            OutlineColor = theme.textborder,
+                            Position = utility.Position(0, 4, 0, itemY, listbg),
+                            ZIndex = 1501,
+                            Visible = true
+                        })
+                        dropdown.holder.drawings[#dropdown.holder.drawings + 1] = itemtext
+                        dropdown.holder.buttons[item] = itemtext
+                    end
+                end
+
+                -- Input handling
+                library.began[#library.began + 1] = function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 and window.isVisible and dropdownoutline.Visible then
+                        if utility.MouseOverDrawing({
+                            dropdownoutline.Position.X,
+                            dropdownoutline.Position.Y,
+                            dropdownoutline.Position.X + dropdownoutline.Size.X,
+                            dropdownoutline.Position.Y + dropdownoutline.Size.Y
+                        }) then
+                            dropdown:OpenDropdown()
+                        elseif dropdown.open and window.currentContent.frame then
+                            if utility.MouseOverDrawing({
+                                window.currentContent.frame.Position.X,
+                                window.currentContent.frame.Position.Y,
+                                window.currentContent.frame.Position.X + window.currentContent.frame.Size.X,
+                                window.currentContent.frame.Position.Y + window.currentContent.frame.Size.Y
+                            }) then
+                                -- Check which item was clicked
+                                for item, textobj in pairs(dropdown.holder.buttons) do
+                                    if utility.MouseOverDrawing({
+                                        textobj.Position.X - 4,
+                                        textobj.Position.Y,
+                                        textobj.Position.X + window.currentContent.frame.Size.X - 4,
+                                        textobj.Position.Y + 16
+                                    }) then
+                                        dropdown:Set(item)
+                                        dropdown:OpenDropdown() -- Close
+                                        break
+                                    end
+                                end
+                            else
+                                dropdown:OpenDropdown() -- Close
+                            end
+                        end
+                    end
+                end
+
+                -- Initialize
+                if dropdownflag then
+                    library.flags[dropdownflag] = dropdowndefault
+                    library.pointers[dropdownflag] = dropdown
+                end
+                if dropdowndefault ~= "" then
+                    pcall(dropdowncallback, dropdowndefault)
+                end
+
+                section.elementOffset = section.elementOffset + 42
+                section.elements[#section.elements + 1] = dropdown
+                return dropdown
+            end
+
+            -- Keybind element
+            function section:Keybind(info)
+                info = info or {}
+                local keybindname = info.name or info.Name or "Keybind"
+                local keybinddefault = info.default or info.Default or Enum.KeyCode.Unknown
+                local keybindflag = info.flag or info.Flag or info.pointer or info.Pointer
+                local keybindcallback = info.callback or info.Callback or function() end
+
+                local keybind = {
+                    value = keybinddefault,
+                    axis = section.elementOffset + 14,
+                    listening = false
+                }
+
+                local keyNames = {
+                    [Enum.KeyCode.LeftShift] = "LShift",
+                    [Enum.KeyCode.RightShift] = "RShift",
+                    [Enum.KeyCode.LeftControl] = "LCtrl",
+                    [Enum.KeyCode.RightControl] = "RCtrl",
+                    [Enum.KeyCode.LeftAlt] = "LAlt",
+                    [Enum.KeyCode.RightAlt] = "RAlt",
+                    [Enum.UserInputType.MouseButton1] = "MB1",
+                    [Enum.UserInputType.MouseButton2] = "MB2",
+                    [Enum.UserInputType.MouseButton3] = "MB3"
+                }
+
+                local function getKeyName(key)
+                    if keyNames[key] then
+                        return keyNames[key]
+                    elseif typeof(key) == "EnumItem" then
+                        return key.Name
+                    end
+                    return "None"
+                end
+
+                -- Keybind holder
+                local keybindholder = utility.Create("Frame", Vector2.new(8, keybind.axis), {sectionframe}, {
+                    Size = utility.Size(1, -16, 0, 14, sectionframe),
+                    Position = utility.Position(0, 8, 0, keybind.axis, sectionframe),
+                    Color = theme.lightcontrast,
+                    Visible = page.open,
+                    Transparency = 0
+                })
+                keybind.holder = keybindholder
+
+                -- Keybind title
+                local keybindtitle = utility.Create("TextLabel", Vector2.new(0, 0), {keybindholder}, {
+                    Text = keybindname,
+                    Size = theme.textsize,
+                    Font = theme.font,
+                    Color = theme.textcolor,
+                    OutlineColor = theme.textborder,
+                    Position = utility.Position(0, 0, 0, -1, keybindholder),
+                    Visible = page.open
+                })
+                keybind.title = keybindtitle
+                library.colors[keybindtitle] = {OutlineColor = "textborder", Color = "textcolor"}
+
+                -- Keybind value
+                local keybindvalue = utility.Create("TextLabel", Vector2.new(0, 0), {keybindholder}, {
+                    Text = "[" .. getKeyName(keybinddefault) .. "]",
+                    Size = theme.textsize,
+                    Font = theme.font,
+                    Color = theme.textcolor,
+                    OutlineColor = theme.textborder,
+                    Position = utility.Position(1, -utility.GetTextBounds("[" .. getKeyName(keybinddefault) .. "]", theme.textsize, theme.font).X, 0, -1, keybindholder),
+                    Visible = page.open
+                })
+                keybind.valuetext = keybindvalue
+                library.colors[keybindvalue] = {OutlineColor = "textborder", Color = "textcolor"}
 
                 function keybind:Set(key)
-                    currentKey = key
-                    keyBtn.Text = key.Name
-                    if keybind.Flag then
-                        NexusLib.Flags[keybind.Flag] = key
+                    keybind.value = key
+                    local keyName = getKeyName(key)
+                    keybindvalue.Text = "[" .. keyName .. "]"
+                    keybindvalue.Position = utility.Position(1, -utility.GetTextBounds("[" .. keyName .. "]", theme.textsize, theme.font).X, 0, -1, keybindholder)
+                    if keybindflag then
+                        library.flags[keybindflag] = key
                     end
                 end
 
+                function keybind:Get()
+                    return keybind.value
+                end
+
+                function keybind:SetVisible(state)
+                    keybindholder.Visible = state
+                    keybindtitle.Visible = state
+                    keybindvalue.Visible = state
+                end
+
+                function keybind:GetHeight()
+                    return 14
+                end
+
+                -- Input handling
+                library.began[#library.began + 1] = function(input)
+                    if keybind.listening and window.isVisible then
+                        local key = input.KeyCode ~= Enum.KeyCode.Unknown and input.KeyCode or input.UserInputType
+                        if key ~= Enum.KeyCode.Escape then
+                            keybind:Set(key)
+                        else
+                            keybind:Set(Enum.KeyCode.Unknown)
+                        end
+                        keybind.listening = false
+                        keybindvalue.Color = theme.textcolor
+                        return
+                    end
+
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 and window.isVisible and keybindholder.Visible then
+                        if utility.MouseOverDrawing({
+                            keybindholder.Position.X,
+                            keybindholder.Position.Y,
+                            keybindholder.Position.X + keybindholder.Size.X,
+                            keybindholder.Position.Y + keybindholder.Size.Y
+                        }) and not window:IsOverContent() then
+                            keybind.listening = true
+                            keybindvalue.Color = theme.accent
+                        end
+                    end
+
+                    -- Trigger callback
+                    if keybind.value ~= Enum.KeyCode.Unknown then
+                        if input.KeyCode == keybind.value or input.UserInputType == keybind.value then
+                            pcall(keybindcallback, keybind.value)
+                        end
+                    end
+                end
+
+                -- Initialize
+                if keybindflag then
+                    library.flags[keybindflag] = keybinddefault
+                    library.pointers[keybindflag] = keybind
+                end
+
+                section.elementOffset = section.elementOffset + 20
+                section.elements[#section.elements + 1] = keybind
                 return keybind
             end
 
-            table.insert(tab.Sections, section)
+            page.sections[#page.sections + 1] = section
             return section
         end
 
-        table.insert(window.Tabs, tab)
-
-        -- Select first tab by default
-        if #window.Tabs == 1 then
-            tab.Content.Visible = true
-            tab.Button.BackgroundColor3 = NexusLib.Theme.Accent
-            tab.Button.TextColor3 = NexusLib.Theme.Text
-            window.CurrentTab = tab
-        end
-
-        return tab
+        window.pages[#window.pages + 1] = page
+        return page
     end
 
-    -- Add Settings Tab (Always included)
-    local settingsTab = window:AddTab({Name = "Settings"})
-
-    local generalSection = settingsTab:AddSection({Name = "General", Side = "Left"})
-
-    generalSection:AddButton({
-        Name = "Open Debug Menu",
-        Callback = function()
-            NexusLib:CreateDebugWindow()
+    -- Initialize window
+    function window:Initialize()
+        if window.pages[1] then
+            window.pages[1]:Show()
         end
-    })
 
-    generalSection:AddButton({
-        Name = "Unload Library",
-        Callback = function()
-            NexusLib:Unload()
+        for i, v in pairs(window.pages) do
+            v:Update()
         end
-    })
 
-    generalSection:AddKeybind({
-        Name = "Toggle UI Key",
-        Default = Enum.KeyCode.RightShift,
-        Flag = "ToggleKey",
-        Callback = function(key)
-            NexusLib.Settings.ToggleKey = key
-        end
-    })
+        library.shared.initialized = true
 
-    local configSection = settingsTab:AddSection({Name = "Configs", Side = "Right"})
+        window:Watermark({name = name})
+        window:Cursor()
 
-    local configDropdown = configSection:AddDropdown({
-        Name = "Select Config",
-        Items = NexusLib:GetConfigs(),
-        Flag = "SelectedConfig"
-    })
+        window:Fade()
 
-    configSection:AddTextbox({
-        Name = "Config Name",
-        Placeholder = "Enter config name...",
-        Flag = "ConfigName"
-    })
+        library:Log("Window initialized", "INFO")
+    end
 
-    configSection:AddButton({
-        Name = "Save Config",
-        Callback = function()
-            local name = NexusLib.Flags.ConfigName
-            if name and name ~= "" then
-                NexusLib:SaveConfig(name)
-                configDropdown:Refresh(NexusLib:GetConfigs())
+    -- Input connections
+    library.began[#library.began + 1] = function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 and window.isVisible then
+            if utility.MouseOverDrawing({
+                mainframe.Position.X,
+                mainframe.Position.Y,
+                mainframe.Position.X + mainframe.Size.X,
+                mainframe.Position.Y + 25
+            }) then
+                local mouseLocation = utility.MouseLocation()
+                window.dragging = true
+                window.drag = Vector2.new(mouseLocation.X - mainframe.Position.X, mouseLocation.Y - mainframe.Position.Y)
+            end
+
+            -- Tab clicking
+            for i, page in pairs(window.pages) do
+                if page.taboutline and utility.MouseOverDrawing({
+                    page.taboutline.Position.X,
+                    page.taboutline.Position.Y,
+                    page.taboutline.Position.X + page.taboutline.Size.X,
+                    page.taboutline.Position.Y + page.taboutline.Size.Y
+                }) then
+                    page:Show()
+                end
             end
         end
-    })
+    end
 
-    configSection:AddButton({
-        Name = "Load Config",
-        Callback = function()
-            local name = NexusLib.Flags.SelectedConfig
-            if name then
-                NexusLib:LoadConfig(name)
+    library.ended[#library.ended + 1] = function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            window.dragging = false
+            window.drag = Vector2.new(0, 0)
+        end
+    end
+
+    library.changed[#library.changed + 1] = function()
+        if window.dragging and window.isVisible then
+            local mouseLocation = utility.MouseLocation()
+            local screenSize = utility.GetScreenSize()
+            local move = Vector2.new(
+                math.clamp(mouseLocation.X - window.drag.X, 5, screenSize.X - mainframe.Size.X - 5),
+                math.clamp(mouseLocation.Y - window.drag.Y, 5, screenSize.Y - mainframe.Size.Y - 5)
+            )
+            window:Move(move)
+        end
+    end
+
+    library.began[#library.began + 1] = function(input)
+        if input.KeyCode == window.uibind then
+            window:Fade()
+        end
+    end
+
+    -- Connect input events
+    utility.Connection(UserInputService.InputBegan, function(input)
+        for _, func in pairs(library.began) do
+            pcall(func, input)
+        end
+    end)
+
+    utility.Connection(UserInputService.InputChanged, function(input)
+        for _, func in pairs(library.changed) do
+            pcall(func, input)
+        end
+    end)
+
+    utility.Connection(UserInputService.InputEnded, function(input)
+        for _, func in pairs(library.ended) do
+            pcall(func, input)
+        end
+    end)
+
+    utility.Connection(workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"), function()
+        window:Move(Vector2.new(utility.GetScreenSize().X/2 - size.X/2, utility.GetScreenSize().Y/2 - size.Y/2))
+    end)
+
+    return setmetatable(window, library)
+end
+
+-- Config functions
+function library:SaveConfig(name)
+    local config = {}
+    for flag, pointer in pairs(library.pointers) do
+        if pointer.Get then
+            local value = pointer:Get()
+            if typeof(value) == "EnumItem" then
+                config[flag] = {Type = "Enum", EnumType = tostring(value.EnumType), Name = value.Name}
+            elseif typeof(value) == "Color3" then
+                config[flag] = {Type = "Color3", R = value.R, G = value.G, B = value.B}
+            else
+                config[flag] = value
             end
         end
-    })
-
-    table.insert(self.Windows, window)
-    self:Log("Window created successfully: " .. window.Name, "INFO")
-
-    return window
+    end
+    local encoded = HttpService:JSONEncode(config)
+    writefile(library.folders.configs .. "/" .. name .. ".json", encoded)
+    library:Log("Config saved: " .. name, "INFO")
 end
 
--- Unload Library
-function NexusLib:Unload()
-    self:Log("Unloading NexusLib...", "INFO")
-
-    for _, connection in pairs(self.Connections) do
-        pcall(function() connection:Disconnect() end)
+function library:LoadConfig(name)
+    if isfile(library.folders.configs .. "/" .. name .. ".json") then
+        local decoded = HttpService:JSONDecode(readfile(library.folders.configs .. "/" .. name .. ".json"))
+        for flag, value in pairs(decoded) do
+            if library.pointers[flag] and library.pointers[flag].Set then
+                if type(value) == "table" then
+                    if value.Type == "Enum" then
+                        library.pointers[flag]:Set(Enum[value.EnumType][value.Name])
+                    elseif value.Type == "Color3" then
+                        library.pointers[flag]:Set(Color3.new(value.R, value.G, value.B))
+                    end
+                else
+                    library.pointers[flag]:Set(value)
+                end
+            end
+        end
+        library:Log("Config loaded: " .. name, "INFO")
     end
-
-    if self.ScreenGui then
-        self.ScreenGui:Destroy()
-    end
-
-    self:Log("NexusLib unloaded", "INFO")
 end
 
--- Initialize and return
-return NexusLib:Init()
+function library:GetConfigs()
+    local configs = {}
+    for _, file in pairs(listfiles(library.folders.configs)) do
+        if file:sub(-5) == ".json" then
+            table.insert(configs, file:match("([^/\]+)%.json$"))
+        end
+    end
+    return configs
+end
+
+return library
