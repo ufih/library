@@ -1,6 +1,7 @@
 --[[
-    NexusLib v2 - Drawing UI Library
-    Clean rewrite with fixed positioning
+    NexusLib v3 - Enhanced Drawing UI Library
+    Inspired by Pandora, Specter, Splix styles
+    Clean modern look with horizontal tabs
 ]]
 
 local library = {
@@ -8,15 +9,19 @@ local library = {
     connections = {},
     flags = {},
     pointers = {},
+    open = true,
+    accent = Color3.fromRGB(76, 162, 252),
     theme = {
-        accent = Color3.fromRGB(134, 87, 255),
-        background = Color3.fromRGB(25, 25, 25),
-        topbar = Color3.fromRGB(30, 30, 30),
-        section = Color3.fromRGB(22, 22, 22),
-        outline = Color3.fromRGB(0, 0, 0),
-        inline = Color3.fromRGB(50, 50, 50),
+        background = Color3.fromRGB(8, 8, 8),
+        topbar = Color3.fromRGB(11, 11, 11),
+        sidebar = Color3.fromRGB(8, 8, 8),
+        section = Color3.fromRGB(11, 11, 11),
+        sectionheader = Color3.fromRGB(11, 11, 11),
+        outline = Color3.fromRGB(28, 28, 28),
+        inline = Color3.fromRGB(38, 38, 38),
         text = Color3.fromRGB(255, 255, 255),
-        dimtext = Color3.fromRGB(180, 180, 180)
+        dimtext = Color3.fromRGB(78, 78, 78),
+        elementbg = Color3.fromRGB(20, 20, 20)
     }
 }
 
@@ -26,94 +31,119 @@ local RS = game:GetService("RunService")
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 
--- Drawing helper
+-- Helper functions
 local function create(class, props)
-    local drawing = Drawing.new(class)
+    local obj = Drawing.new(class)
     for k, v in pairs(props or {}) do
-        pcall(function() drawing[k] = v end)
+        pcall(function() obj[k] = v end)
     end
-    table.insert(library.drawings, drawing)
-    return drawing
+    table.insert(library.drawings, obj)
+    return obj
 end
 
-local function remove(drawing)
+local function remove(obj)
     for i, v in pairs(library.drawings) do
-        if v == drawing then
+        if v == obj then
             table.remove(library.drawings, i)
             break
         end
     end
-    pcall(function() drawing:Remove() end)
+    pcall(function() obj:Remove() end)
 end
 
-local function getTextSize(text, size)
+local function textBounds(text, size)
     local t = Drawing.new("Text")
-    t.Text = text
+    t.Text = text or ""
     t.Size = size or 13
     t.Font = 2
-    local bounds = t.TextBounds
+    local b = t.TextBounds
     t:Remove()
-    return bounds
+    return b
 end
 
-local function isMouseOver(x, y, w, h)
-    local mouse = UIS:GetMouseLocation()
-    return mouse.X >= x and mouse.X <= x + w and mouse.Y >= y and mouse.Y <= y + h
+local function mouseOver(x, y, w, h)
+    local m = UIS:GetMouseLocation()
+    return m.X >= x and m.X <= x + w and m.Y >= y and m.Y <= y + h
 end
 
+local function lerp(a, b, t)
+    return a + (b - a) * t
+end
+
+local function lerpColor(c1, c2, t)
+    return Color3.new(
+        lerp(c1.R, c2.R, t),
+        lerp(c1.G, c2.G, t),
+        lerp(c1.B, c2.B, t)
+    )
+end
+
+-- Main library
 function library:New(config)
     config = config or {}
     local name = config.name or "NexusLib"
-    local sizeX = config.sizeX or 550
-    local sizeY = config.sizeY or 400
+    local sizeX = config.sizeX or 580
+    local sizeY = config.sizeY or 450
 
     if config.accent then
-        library.theme.accent = config.accent
+        library.accent = config.accent
     end
 
     local window = {
-        position = Vector2.new(100, 100),
+        pos = Vector2.new(100, 50),
         size = Vector2.new(sizeX, sizeY),
-        visible = true,
         dragging = false,
         dragOffset = Vector2.new(0, 0),
         pages = {},
         currentPage = nil,
-        objects = {},
-        toggleKey = Enum.KeyCode.RightShift
+        objects = {}
     }
+
+    local t = library.theme
+    local a = library.accent
 
     -- Main outline
     window.objects.outline = create("Square", {
-        Size = Vector2.new(sizeX, sizeY),
-        Position = window.position,
-        Color = library.theme.outline,
+        Size = window.size,
+        Position = window.pos,
+        Color = t.outline,
         Filled = true,
         Thickness = 0,
         Visible = true,
         ZIndex = 1
     })
 
-    -- Accent line
-    window.objects.accent = create("Square", {
-        Size = Vector2.new(sizeX - 2, 2),
-        Position = window.position + Vector2.new(1, 1),
-        Color = library.theme.accent,
+    -- Main background
+    window.objects.bg = create("Square", {
+        Size = Vector2.new(sizeX - 2, sizeY - 2),
+        Position = window.pos + Vector2.new(1, 1),
+        Color = t.background,
         Filled = true,
         Thickness = 0,
         Visible = true,
         ZIndex = 2
     })
 
-    -- Main background
-    window.objects.background = create("Square", {
-        Size = Vector2.new(sizeX - 2, sizeY - 4),
-        Position = window.position + Vector2.new(1, 3),
-        Color = library.theme.topbar,
+    -- Top bar
+    window.objects.topbar = create("Square", {
+        Size = Vector2.new(sizeX - 4, 22),
+        Position = window.pos + Vector2.new(2, 2),
+        Color = t.topbar,
         Filled = true,
         Thickness = 0,
         Visible = true,
-        ZIndex = 2
+        ZIndex = 3
+    })
+
+    -- Accent gradient line under topbar
+    window.objects.accentLine = create("Square", {
+        Size = Vector2.new(sizeX - 4, 1),
+        Position = window.pos + Vector2.new(2, 24),
+        Color = a,
+        Filled = true,
+        Thickness = 0,
+        Visible = true,
+        ZIndex = 4
     })
 
     -- Title
@@ -121,92 +151,120 @@ function library:New(config)
         Text = name,
         Size = 13,
         Font = 2,
-        Color = library.theme.text,
+        Color = a,
         Outline = true,
         OutlineColor = Color3.new(0, 0, 0),
-        Position = window.position + Vector2.new(8, 6),
+        Position = window.pos + Vector2.new(8, 5),
         Visible = true,
-        ZIndex = 3
+        ZIndex = 5
     })
 
-    -- Tab holder outline
-    window.objects.tabOutline = create("Square", {
-        Size = Vector2.new(120, sizeY - 36),
-        Position = window.position + Vector2.new(8, 28),
-        Color = library.theme.outline,
-        Filled = true,
-        Thickness = 0,
-        Visible = true,
-        ZIndex = 2
-    })
-
-    -- Tab holder
-    window.objects.tabHolder = create("Square", {
-        Size = Vector2.new(118, sizeY - 38),
-        Position = window.position + Vector2.new(9, 29),
-        Color = library.theme.section,
-        Filled = true,
-        Thickness = 0,
-        Visible = true,
-        ZIndex = 3
-    })
-
-    -- Content outline
+    -- Content area outline
     window.objects.contentOutline = create("Square", {
-        Size = Vector2.new(sizeX - 144, sizeY - 36),
-        Position = window.position + Vector2.new(136, 28),
-        Color = library.theme.outline,
-        Filled = true,
-        Thickness = 0,
-        Visible = true,
-        ZIndex = 2
-    })
-
-    -- Content inline
-    window.objects.contentInline = create("Square", {
-        Size = Vector2.new(sizeX - 146, sizeY - 38),
-        Position = window.position + Vector2.new(137, 29),
-        Color = library.theme.inline,
+        Size = Vector2.new(sizeX - 4, sizeY - 50),
+        Position = window.pos + Vector2.new(2, 26),
+        Color = t.outline,
         Filled = true,
         Thickness = 0,
         Visible = true,
         ZIndex = 3
     })
 
-    -- Content background
+    -- Content area
     window.objects.content = create("Square", {
-        Size = Vector2.new(sizeX - 148, sizeY - 40),
-        Position = window.position + Vector2.new(138, 30),
-        Color = library.theme.section,
+        Size = Vector2.new(sizeX - 6, sizeY - 52),
+        Position = window.pos + Vector2.new(3, 27),
+        Color = t.section,
         Filled = true,
         Thickness = 0,
         Visible = true,
         ZIndex = 4
     })
 
-    -- Update all positions
+    -- Left sidebar outline
+    window.objects.sidebarOutline = create("Square", {
+        Size = Vector2.new(112, sizeY - 54),
+        Position = window.pos + Vector2.new(4, 28),
+        Color = t.outline,
+        Filled = true,
+        Thickness = 0,
+        Visible = true,
+        ZIndex = 5
+    })
+
+    -- Left sidebar
+    window.objects.sidebar = create("Square", {
+        Size = Vector2.new(110, sizeY - 56),
+        Position = window.pos + Vector2.new(5, 29),
+        Color = t.sidebar,
+        Filled = true,
+        Thickness = 0,
+        Visible = true,
+        ZIndex = 6
+    })
+
+    -- Bottom bar
+    window.objects.bottomOutline = create("Square", {
+        Size = Vector2.new(sizeX - 4, 22),
+        Position = window.pos + Vector2.new(2, sizeY - 24),
+        Color = t.outline,
+        Filled = true,
+        Thickness = 0,
+        Visible = true,
+        ZIndex = 3
+    })
+
+    window.objects.bottombar = create("Square", {
+        Size = Vector2.new(sizeX - 6, 20),
+        Position = window.pos + Vector2.new(3, sizeY - 23),
+        Color = t.topbar,
+        Filled = true,
+        Thickness = 0,
+        Visible = true,
+        ZIndex = 4
+    })
+
+    -- Version text
+    window.objects.version = create("Text", {
+        Text = "version: live",
+        Size = 13,
+        Font = 2,
+        Color = a,
+        Outline = true,
+        OutlineColor = Color3.new(0, 0, 0),
+        Position = window.pos + Vector2.new(8, sizeY - 20),
+        Visible = true,
+        ZIndex = 5
+    })
+
+    -- Tab holder X position (after title)
+    local tabStartX = textBounds(name, 13).X + 20
+    window.tabStartX = tabStartX
+
     function window:UpdatePositions()
-        local pos = window.position
-        local objs = window.objects
+        local p = window.pos
+        local o = window.objects
 
-        objs.outline.Position = pos
-        objs.accent.Position = pos + Vector2.new(1, 1)
-        objs.background.Position = pos + Vector2.new(1, 3)
-        objs.title.Position = pos + Vector2.new(8, 6)
-        objs.tabOutline.Position = pos + Vector2.new(8, 28)
-        objs.tabHolder.Position = pos + Vector2.new(9, 29)
-        objs.contentOutline.Position = pos + Vector2.new(136, 28)
-        objs.contentInline.Position = pos + Vector2.new(137, 29)
-        objs.content.Position = pos + Vector2.new(138, 30)
+        o.outline.Position = p
+        o.bg.Position = p + Vector2.new(1, 1)
+        o.topbar.Position = p + Vector2.new(2, 2)
+        o.accentLine.Position = p + Vector2.new(2, 24)
+        o.title.Position = p + Vector2.new(8, 5)
+        o.contentOutline.Position = p + Vector2.new(2, 26)
+        o.content.Position = p + Vector2.new(3, 27)
+        o.sidebarOutline.Position = p + Vector2.new(4, 28)
+        o.sidebar.Position = p + Vector2.new(5, 29)
+        o.bottomOutline.Position = p + Vector2.new(2, sizeY - 24)
+        o.bottombar.Position = p + Vector2.new(3, sizeY - 23)
+        o.version.Position = p + Vector2.new(8, sizeY - 20)
 
-        -- Update pages
         for _, page in pairs(window.pages) do
             page:UpdatePositions()
         end
     end
 
     function window:SetVisible(state)
-        window.visible = state
+        library.open = state
         for _, obj in pairs(window.objects) do
             pcall(function() obj.Visible = state end)
         end
@@ -216,7 +274,7 @@ function library:New(config)
     end
 
     function window:Toggle()
-        window:SetVisible(not window.visible)
+        window:SetVisible(not library.open)
     end
 
     -- Page function
@@ -228,35 +286,39 @@ function library:New(config)
             name = pageName,
             visible = false,
             sections = {},
-            sectionOffsets = {left = 0, right = 0},
+            sectionButtons = {},
+            currentSection = nil,
             objects = {},
             window = window
         }
 
-        local tabY = 4
-        for i, p in pairs(window.pages) do
-            tabY = tabY + 22
+        -- Calculate tab position
+        local tabX = window.tabStartX
+        for _, p in pairs(window.pages) do
+            tabX = tabX + textBounds(p.name, 13).X + 16
         end
 
-        -- Tab outline
-        page.objects.tabOutline = create("Square", {
-            Size = Vector2.new(110, 20),
-            Position = window.position + Vector2.new(13, 33 + tabY - 4),
-            Color = library.theme.outline,
+        local tabWidth = textBounds(pageName, 13).X + 12
+
+        -- Tab background (shows when active)
+        page.objects.tabBg = create("Square", {
+            Size = Vector2.new(tabWidth, 19),
+            Position = window.pos + Vector2.new(tabX, 4),
+            Color = t.section,
             Filled = true,
             Thickness = 0,
-            Visible = true,
+            Visible = false,
             ZIndex = 4
         })
 
-        -- Tab background
-        page.objects.tabBg = create("Square", {
-            Size = Vector2.new(108, 18),
-            Position = window.position + Vector2.new(14, 34 + tabY - 4),
-            Color = library.theme.topbar,
+        -- Tab accent line
+        page.objects.tabAccent = create("Square", {
+            Size = Vector2.new(tabWidth - 4, 1),
+            Position = window.pos + Vector2.new(tabX + 2, 5),
+            Color = a,
             Filled = true,
             Thickness = 0,
-            Visible = true,
+            Visible = false,
             ZIndex = 5
         })
 
@@ -265,22 +327,26 @@ function library:New(config)
             Text = pageName,
             Size = 13,
             Font = 2,
-            Color = library.theme.dimtext,
+            Color = t.dimtext,
             Outline = true,
             OutlineColor = Color3.new(0, 0, 0),
-            Center = true,
-            Position = window.position + Vector2.new(68, 36 + tabY - 4),
+            Position = window.pos + Vector2.new(tabX + 6, 7),
             Visible = true,
             ZIndex = 6
         })
 
-        page.tabY = tabY
+        page.tabX = tabX
+        page.tabWidth = tabWidth
 
         function page:UpdatePositions()
-            local pos = window.position
-            page.objects.tabOutline.Position = pos + Vector2.new(13, 33 + page.tabY - 4)
-            page.objects.tabBg.Position = pos + Vector2.new(14, 34 + page.tabY - 4)
-            page.objects.tabText.Position = pos + Vector2.new(68, 36 + page.tabY - 4)
+            local p = window.pos
+            page.objects.tabBg.Position = p + Vector2.new(page.tabX, 4)
+            page.objects.tabAccent.Position = p + Vector2.new(page.tabX + 2, 5)
+            page.objects.tabText.Position = p + Vector2.new(page.tabX + 6, 7)
+
+            for i, btn in pairs(page.sectionButtons) do
+                btn:UpdatePositions()
+            end
 
             for _, section in pairs(page.sections) do
                 section:UpdatePositions()
@@ -289,11 +355,16 @@ function library:New(config)
 
         function page:SetVisible(state)
             page.visible = state
-            page.objects.tabBg.Color = state and library.theme.section or library.theme.topbar
-            page.objects.tabText.Color = state and library.theme.accent or library.theme.dimtext
+            page.objects.tabBg.Visible = state
+            page.objects.tabAccent.Visible = state
+            page.objects.tabText.Color = state and library.accent or t.dimtext
+
+            for _, btn in pairs(page.sectionButtons) do
+                btn:SetVisible(state)
+            end
 
             for _, section in pairs(page.sections) do
-                section:SetVisible(state)
+                section:SetVisible(state and section == page.currentSection)
             end
         end
 
@@ -303,166 +374,298 @@ function library:New(config)
             end
             page:SetVisible(true)
             window.currentPage = page
+
+            if page.currentSection then
+                page.currentSection:SetVisible(true)
+            elseif page.sections[1] then
+                page.sections[1]:Show()
+            end
         end
 
-        -- Section function
+        -- Section function (appears in sidebar)
         function page:Section(config)
             config = config or {}
             local sectionName = config.name or "Section"
-            local side = (config.side or "left"):lower()
-            local sectionSize = config.size or 180
+            local leftTitle = config.left or "general"
+            local rightTitle = config.right or "general"
 
             local section = {
                 name = sectionName,
-                side = side,
-                size = sectionSize,
-                elements = {},
-                elementOffset = 18,
+                leftTitle = leftTitle,
+                rightTitle = rightTitle,
+                visible = false,
+                leftElements = {},
+                rightElements = {},
+                leftOffset = 26,
+                rightOffset = 26,
                 objects = {},
                 page = page,
                 window = window
             }
 
-            local xOffset = side == "left" and 142 or (142 + (sizeX - 148) / 2 + 4)
-            local yOffset = side == "left" and page.sectionOffsets.left or page.sectionOffsets.right
-            local sectionWidth = (sizeX - 156) / 2
+            -- Button in sidebar
+            local btnY = 8 + (#page.sections * 22)
+            local sectionBtn = {
+                yOffset = btnY,
+                objects = {}
+            }
 
-            section.xOffset = xOffset
-            section.yOffset = yOffset
-            section.width = sectionWidth
-
-            -- Section outline
-            section.objects.outline = create("Square", {
-                Size = Vector2.new(sectionWidth, sectionSize),
-                Position = window.position + Vector2.new(xOffset, 34 + yOffset),
-                Color = library.theme.outline,
+            -- Accent bar (shows when active)
+            sectionBtn.objects.accent = create("Square", {
+                Size = Vector2.new(1, 18),
+                Position = window.pos + Vector2.new(6, 30 + btnY),
+                Color = a,
                 Filled = true,
                 Thickness = 0,
-                Visible = page.visible,
-                ZIndex = 5
+                Visible = false,
+                ZIndex = 7
             })
 
-            -- Section inline
-            section.objects.inline = create("Square", {
-                Size = Vector2.new(sectionWidth - 2, sectionSize - 2),
-                Position = window.position + Vector2.new(xOffset + 1, 35 + yOffset),
-                Color = library.theme.inline,
-                Filled = true,
-                Thickness = 0,
-                Visible = page.visible,
-                ZIndex = 6
-            })
-
-            -- Section background
-            section.objects.background = create("Square", {
-                Size = Vector2.new(sectionWidth - 4, sectionSize - 4),
-                Position = window.position + Vector2.new(xOffset + 2, 36 + yOffset),
-                Color = library.theme.topbar,
-                Filled = true,
-                Thickness = 0,
+            -- Button text
+            sectionBtn.objects.text = create("Text", {
+                Text = sectionName,
+                Size = 13,
+                Font = 2,
+                Color = t.dimtext,
+                Outline = true,
+                OutlineColor = Color3.new(0, 0, 0),
+                Position = window.pos + Vector2.new(14, 32 + btnY),
                 Visible = page.visible,
                 ZIndex = 7
             })
 
-            -- Section title background
-            local titleWidth = getTextSize(sectionName, 13).X + 6
-            section.objects.titleBg = create("Square", {
-                Size = Vector2.new(titleWidth, 12),
-                Position = window.position + Vector2.new(xOffset + 8, 30 + yOffset),
-                Color = library.theme.topbar,
+            function sectionBtn:UpdatePositions()
+                local p = window.pos
+                sectionBtn.objects.accent.Position = p + Vector2.new(6, 30 + sectionBtn.yOffset)
+                sectionBtn.objects.text.Position = p + Vector2.new(14, 32 + sectionBtn.yOffset)
+            end
+
+            function sectionBtn:SetVisible(state)
+                sectionBtn.objects.accent.Visible = state and section == page.currentSection
+                sectionBtn.objects.text.Visible = state
+                sectionBtn.objects.text.Color = (section == page.currentSection) and Color3.new(1, 1, 1) or t.dimtext
+            end
+
+            table.insert(page.sectionButtons, sectionBtn)
+            section.button = sectionBtn
+
+            -- Content area dimensions
+            local contentX = 120
+            local contentWidth = (sizeX - 130) / 2 - 8
+            local contentY = 30
+
+            -- Left column outline
+            section.objects.leftOutline = create("Square", {
+                Size = Vector2.new(contentWidth + 2, sizeY - 84),
+                Position = window.pos + Vector2.new(contentX, contentY),
+                Color = t.outline,
                 Filled = true,
                 Thickness = 0,
-                Visible = page.visible,
+                Visible = false,
+                ZIndex = 5
+            })
+
+            -- Left column
+            section.objects.left = create("Square", {
+                Size = Vector2.new(contentWidth, sizeY - 86),
+                Position = window.pos + Vector2.new(contentX + 1, contentY + 1),
+                Color = t.sidebar,
+                Filled = true,
+                Thickness = 0,
+                Visible = false,
+                ZIndex = 6
+            })
+
+            -- Left header
+            section.objects.leftHeader = create("Square", {
+                Size = Vector2.new(contentWidth, 20),
+                Position = window.pos + Vector2.new(contentX + 1, contentY + 1),
+                Color = t.sectionheader,
+                Filled = true,
+                Thickness = 0,
+                Visible = false,
+                ZIndex = 7
+            })
+
+            -- Left header line
+            section.objects.leftHeaderLine = create("Square", {
+                Size = Vector2.new(contentWidth, 1),
+                Position = window.pos + Vector2.new(contentX + 1, contentY + 21),
+                Color = t.outline,
+                Filled = true,
+                Thickness = 0,
+                Visible = false,
                 ZIndex = 8
             })
 
-            -- Section title
-            section.objects.title = create("Text", {
-                Text = sectionName,
+            -- Left title
+            section.objects.leftTitle = create("Text", {
+                Text = leftTitle,
                 Size = 13,
                 Font = 2,
-                Color = library.theme.text,
+                Color = t.dimtext,
                 Outline = true,
                 OutlineColor = Color3.new(0, 0, 0),
-                Position = window.position + Vector2.new(xOffset + 11, 29 + yOffset),
-                Visible = page.visible,
-                ZIndex = 9
+                Position = window.pos + Vector2.new(contentX + 8, contentY + 4),
+                Visible = false,
+                ZIndex = 8
             })
 
-            -- Update section offset
-            if side == "left" then
-                page.sectionOffsets.left = page.sectionOffsets.left + sectionSize + 8
-            else
-                page.sectionOffsets.right = page.sectionOffsets.right + sectionSize + 8
-            end
+            -- Right column outline
+            local rightX = contentX + contentWidth + 10
+            section.objects.rightOutline = create("Square", {
+                Size = Vector2.new(contentWidth + 2, sizeY - 84),
+                Position = window.pos + Vector2.new(rightX, contentY),
+                Color = t.outline,
+                Filled = true,
+                Thickness = 0,
+                Visible = false,
+                ZIndex = 5
+            })
+
+            -- Right column
+            section.objects.right = create("Square", {
+                Size = Vector2.new(contentWidth, sizeY - 86),
+                Position = window.pos + Vector2.new(rightX + 1, contentY + 1),
+                Color = t.sidebar,
+                Filled = true,
+                Thickness = 0,
+                Visible = false,
+                ZIndex = 6
+            })
+
+            -- Right header
+            section.objects.rightHeader = create("Square", {
+                Size = Vector2.new(contentWidth, 20),
+                Position = window.pos + Vector2.new(rightX + 1, contentY + 1),
+                Color = t.sectionheader,
+                Filled = true,
+                Thickness = 0,
+                Visible = false,
+                ZIndex = 7
+            })
+
+            -- Right header line
+            section.objects.rightHeaderLine = create("Square", {
+                Size = Vector2.new(contentWidth, 1),
+                Position = window.pos + Vector2.new(rightX + 1, contentY + 21),
+                Color = t.outline,
+                Filled = true,
+                Thickness = 0,
+                Visible = false,
+                ZIndex = 8
+            })
+
+            -- Right title
+            section.objects.rightTitle = create("Text", {
+                Text = rightTitle,
+                Size = 13,
+                Font = 2,
+                Color = t.dimtext,
+                Outline = true,
+                OutlineColor = Color3.new(0, 0, 0),
+                Position = window.pos + Vector2.new(rightX + 8, contentY + 4),
+                Visible = false,
+                ZIndex = 8
+            })
+
+            section.contentX = contentX
+            section.rightX = rightX
+            section.contentY = contentY
+            section.contentWidth = contentWidth
 
             function section:UpdatePositions()
-                local pos = window.position
-                local x = section.xOffset
-                local y = section.yOffset
-                local w = section.width
+                local p = window.pos
+                local cX = section.contentX
+                local rX = section.rightX
+                local cY = section.contentY
+                local cW = section.contentWidth
 
-                section.objects.outline.Position = pos + Vector2.new(x, 34 + y)
-                section.objects.inline.Position = pos + Vector2.new(x + 1, 35 + y)
-                section.objects.background.Position = pos + Vector2.new(x + 2, 36 + y)
-                section.objects.titleBg.Position = pos + Vector2.new(x + 8, 30 + y)
-                section.objects.title.Position = pos + Vector2.new(x + 11, 29 + y)
+                section.objects.leftOutline.Position = p + Vector2.new(cX, cY)
+                section.objects.left.Position = p + Vector2.new(cX + 1, cY + 1)
+                section.objects.leftHeader.Position = p + Vector2.new(cX + 1, cY + 1)
+                section.objects.leftHeaderLine.Position = p + Vector2.new(cX + 1, cY + 21)
+                section.objects.leftTitle.Position = p + Vector2.new(cX + 8, cY + 4)
 
-                for _, elem in pairs(section.elements) do
-                    if elem.UpdatePositions then
-                        elem:UpdatePositions()
-                    end
+                section.objects.rightOutline.Position = p + Vector2.new(rX, cY)
+                section.objects.right.Position = p + Vector2.new(rX + 1, cY + 1)
+                section.objects.rightHeader.Position = p + Vector2.new(rX + 1, cY + 1)
+                section.objects.rightHeaderLine.Position = p + Vector2.new(rX + 1, cY + 21)
+                section.objects.rightTitle.Position = p + Vector2.new(rX + 8, cY + 4)
+
+                for _, elem in pairs(section.leftElements) do
+                    if elem.UpdatePositions then elem:UpdatePositions() end
+                end
+                for _, elem in pairs(section.rightElements) do
+                    if elem.UpdatePositions then elem:UpdatePositions() end
                 end
             end
 
             function section:SetVisible(state)
+                section.visible = state
                 for _, obj in pairs(section.objects) do
                     pcall(function() obj.Visible = state end)
                 end
-                for _, elem in pairs(section.elements) do
-                    if elem.SetVisible then
-                        elem:SetVisible(state)
-                    end
+                section.button.objects.accent.Visible = state
+                section.button.objects.text.Color = state and Color3.new(1, 1, 1) or t.dimtext
+
+                for _, elem in pairs(section.leftElements) do
+                    if elem.SetVisible then elem:SetVisible(state) end
+                end
+                for _, elem in pairs(section.rightElements) do
+                    if elem.SetVisible then elem:SetVisible(state) end
                 end
             end
 
-            -- Toggle
+            function section:Show()
+                for _, s in pairs(page.sections) do
+                    s:SetVisible(false)
+                end
+                section:SetVisible(true)
+                page.currentSection = section
+            end
+
+            -- TOGGLE
             function section:Toggle(config)
                 config = config or {}
                 local toggleName = config.name or "Toggle"
+                local side = (config.side or "left"):lower()
                 local default = config.default or false
                 local flag = config.flag
                 local callback = config.callback or function() end
 
+                local elements = side == "left" and section.leftElements or section.rightElements
+                local offset = side == "left" and section.leftOffset or section.rightOffset
+                local baseX = side == "left" and (section.contentX + 10) or (section.rightX + 10)
+                local elemWidth = section.contentWidth - 20
+
                 local toggle = {
                     value = default,
-                    yPos = section.elementOffset,
+                    side = side,
+                    yOffset = offset,
                     objects = {}
                 }
 
-                local baseX = section.xOffset + 8
-                local baseY = 36 + section.yOffset + section.elementOffset
-
                 -- Checkbox outline
-                toggle.objects.outline = create("Square", {
-                    Size = Vector2.new(10, 10),
-                    Position = window.position + Vector2.new(baseX, baseY),
-                    Color = library.theme.outline,
+                toggle.objects.box = create("Square", {
+                    Size = Vector2.new(6, 6),
+                    Position = window.pos + Vector2.new(baseX, section.contentY + offset + 4),
+                    Color = t.outline,
                     Filled = true,
                     Thickness = 0,
-                    Visible = page.visible,
-                    ZIndex = 8
+                    Visible = section.visible,
+                    ZIndex = 9
                 })
 
                 -- Checkbox fill
                 toggle.objects.fill = create("Square", {
-                    Size = Vector2.new(8, 8),
-                    Position = window.position + Vector2.new(baseX + 1, baseY + 1),
-                    Color = default and library.theme.accent or library.theme.section,
+                    Size = Vector2.new(4, 4),
+                    Position = window.pos + Vector2.new(baseX + 1, section.contentY + offset + 5),
+                    Color = default and a or t.elementbg,
                     Filled = true,
                     Thickness = 0,
-                    Visible = page.visible,
-                    ZIndex = 9
+                    Visible = section.visible,
+                    ZIndex = 10
                 })
 
                 -- Label
@@ -470,23 +673,22 @@ function library:New(config)
                     Text = toggleName,
                     Size = 13,
                     Font = 2,
-                    Color = library.theme.text,
+                    Color = default and t.text or t.dimtext,
                     Outline = true,
                     OutlineColor = Color3.new(0, 0, 0),
-                    Position = window.position + Vector2.new(baseX + 16, baseY - 2),
-                    Visible = page.visible,
+                    Position = window.pos + Vector2.new(baseX + 15, section.contentY + offset + 1),
+                    Visible = section.visible,
                     ZIndex = 9
                 })
 
                 toggle.baseX = baseX
-                toggle.baseY = baseY - 36 - section.yOffset
+                toggle.baseY = section.contentY + offset
 
                 function toggle:UpdatePositions()
-                    local pos = window.position
-                    local y = 36 + section.yOffset + toggle.baseY
-                    toggle.objects.outline.Position = pos + Vector2.new(toggle.baseX, y)
-                    toggle.objects.fill.Position = pos + Vector2.new(toggle.baseX + 1, y + 1)
-                    toggle.objects.label.Position = pos + Vector2.new(toggle.baseX + 16, y - 2)
+                    local p = window.pos
+                    toggle.objects.box.Position = p + Vector2.new(toggle.baseX, toggle.baseY + 4)
+                    toggle.objects.fill.Position = p + Vector2.new(toggle.baseX + 1, toggle.baseY + 5)
+                    toggle.objects.label.Position = p + Vector2.new(toggle.baseX + 15, toggle.baseY + 1)
                 end
 
                 function toggle:SetVisible(state)
@@ -497,20 +699,19 @@ function library:New(config)
 
                 function toggle:Set(value)
                     toggle.value = value
-                    toggle.objects.fill.Color = value and library.theme.accent or library.theme.section
+                    toggle.objects.fill.Color = value and a or t.elementbg
+                    toggle.objects.label.Color = value and t.text or t.dimtext
                     if flag then library.flags[flag] = value end
                     pcall(callback, value)
                 end
 
-                function toggle:Get()
-                    return toggle.value
-                end
+                function toggle:Get() return toggle.value end
 
-                -- Click detection
+                -- Click
                 table.insert(library.connections, UIS.InputBegan:Connect(function(input)
-                    if input.UserInputType == Enum.UserInputType.MouseButton1 and window.visible and page.visible then
-                        local pos = toggle.objects.outline.Position
-                        if isMouseOver(pos.X, pos.Y, section.width - 16, 14) then
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 and library.open and section.visible then
+                        local pos = toggle.objects.box.Position
+                        if mouseOver(pos.X - 2, pos.Y - 2, elemWidth, 14) then
                             toggle:Set(not toggle.value)
                         end
                     end
@@ -522,207 +723,117 @@ function library:New(config)
                 end
                 if default then pcall(callback, default) end
 
-                section.elementOffset = section.elementOffset + 18
-                table.insert(section.elements, toggle)
+                if side == "left" then
+                    section.leftOffset = section.leftOffset + 18
+                else
+                    section.rightOffset = section.rightOffset + 18
+                end
+                table.insert(elements, toggle)
                 return toggle
             end
 
-            -- Button
-            function section:Button(config)
-                config = config or {}
-                local buttonName = config.name or "Button"
-                local callback = config.callback or function() end
-
-                local button = {
-                    yPos = section.elementOffset,
-                    objects = {}
-                }
-
-                local baseX = section.xOffset + 8
-                local baseY = 36 + section.yOffset + section.elementOffset
-                local btnWidth = section.width - 16
-
-                -- Button outline
-                button.objects.outline = create("Square", {
-                    Size = Vector2.new(btnWidth, 18),
-                    Position = window.position + Vector2.new(baseX, baseY),
-                    Color = library.theme.outline,
-                    Filled = true,
-                    Thickness = 0,
-                    Visible = page.visible,
-                    ZIndex = 8
-                })
-
-                -- Button inline
-                button.objects.inline = create("Square", {
-                    Size = Vector2.new(btnWidth - 2, 16),
-                    Position = window.position + Vector2.new(baseX + 1, baseY + 1),
-                    Color = library.theme.inline,
-                    Filled = true,
-                    Thickness = 0,
-                    Visible = page.visible,
-                    ZIndex = 9
-                })
-
-                -- Button background
-                button.objects.bg = create("Square", {
-                    Size = Vector2.new(btnWidth - 4, 14),
-                    Position = window.position + Vector2.new(baseX + 2, baseY + 2),
-                    Color = library.theme.topbar,
-                    Filled = true,
-                    Thickness = 0,
-                    Visible = page.visible,
-                    ZIndex = 10
-                })
-
-                -- Button text
-                button.objects.label = create("Text", {
-                    Text = buttonName,
-                    Size = 13,
-                    Font = 2,
-                    Color = library.theme.text,
-                    Outline = true,
-                    OutlineColor = Color3.new(0, 0, 0),
-                    Center = true,
-                    Position = window.position + Vector2.new(baseX + btnWidth/2, baseY + 2),
-                    Visible = page.visible,
-                    ZIndex = 11
-                })
-
-                button.baseX = baseX
-                button.baseY = baseY - 36 - section.yOffset
-                button.width = btnWidth
-
-                function button:UpdatePositions()
-                    local pos = window.position
-                    local y = 36 + section.yOffset + button.baseY
-                    button.objects.outline.Position = pos + Vector2.new(button.baseX, y)
-                    button.objects.inline.Position = pos + Vector2.new(button.baseX + 1, y + 1)
-                    button.objects.bg.Position = pos + Vector2.new(button.baseX + 2, y + 2)
-                    button.objects.label.Position = pos + Vector2.new(button.baseX + button.width/2, y + 2)
-                end
-
-                function button:SetVisible(state)
-                    for _, obj in pairs(button.objects) do
-                        pcall(function() obj.Visible = state end)
-                    end
-                end
-
-                -- Click detection
-                table.insert(library.connections, UIS.InputBegan:Connect(function(input)
-                    if input.UserInputType == Enum.UserInputType.MouseButton1 and window.visible and page.visible then
-                        local pos = button.objects.outline.Position
-                        if isMouseOver(pos.X, pos.Y, btnWidth, 18) then
-                            button.objects.bg.Color = library.theme.section
-                            pcall(callback)
-                            task.delay(0.1, function()
-                                button.objects.bg.Color = library.theme.topbar
-                            end)
-                        end
-                    end
-                end))
-
-                section.elementOffset = section.elementOffset + 24
-                table.insert(section.elements, button)
-                return button
-            end
-
-            -- Slider
+            -- SLIDER
             function section:Slider(config)
                 config = config or {}
                 local sliderName = config.name or "Slider"
+                local side = (config.side or "left"):lower()
                 local min = config.min or 0
                 local max = config.max or 100
                 local default = config.default or min
                 local increment = config.increment or 1
+                local suffix = config.suffix or ""
                 local flag = config.flag
                 local callback = config.callback or function() end
+
+                local elements = side == "left" and section.leftElements or section.rightElements
+                local offset = side == "left" and section.leftOffset or section.rightOffset
+                local baseX = side == "left" and (section.contentX + 10) or (section.rightX + 10)
+                local sliderWidth = section.contentWidth - 20
 
                 local slider = {
                     value = default,
                     min = min,
                     max = max,
                     dragging = false,
-                    yPos = section.elementOffset,
+                    side = side,
+                    yOffset = offset,
                     objects = {}
                 }
-
-                local baseX = section.xOffset + 8
-                local baseY = 36 + section.yOffset + section.elementOffset
-                local sliderWidth = section.width - 16
 
                 -- Label
                 slider.objects.label = create("Text", {
                     Text = sliderName,
                     Size = 13,
                     Font = 2,
-                    Color = library.theme.text,
+                    Color = t.dimtext,
                     Outline = true,
                     OutlineColor = Color3.new(0, 0, 0),
-                    Position = window.position + Vector2.new(baseX, baseY),
-                    Visible = page.visible,
-                    ZIndex = 8
-                })
-
-                -- Value text
-                slider.objects.value = create("Text", {
-                    Text = tostring(default),
-                    Size = 13,
-                    Font = 2,
-                    Color = library.theme.text,
-                    Outline = true,
-                    OutlineColor = Color3.new(0, 0, 0),
-                    Position = window.position + Vector2.new(baseX + sliderWidth - getTextSize(tostring(default), 13).X, baseY),
-                    Visible = page.visible,
-                    ZIndex = 8
-                })
-
-                -- Slider outline
-                slider.objects.outline = create("Square", {
-                    Size = Vector2.new(sliderWidth, 12),
-                    Position = window.position + Vector2.new(baseX, baseY + 16),
-                    Color = library.theme.outline,
-                    Filled = true,
-                    Thickness = 0,
-                    Visible = page.visible,
-                    ZIndex = 8
-                })
-
-                -- Slider background
-                slider.objects.bg = create("Square", {
-                    Size = Vector2.new(sliderWidth - 2, 10),
-                    Position = window.position + Vector2.new(baseX + 1, baseY + 17),
-                    Color = library.theme.section,
-                    Filled = true,
-                    Thickness = 0,
-                    Visible = page.visible,
+                    Position = window.pos + Vector2.new(baseX, section.contentY + offset),
+                    Visible = section.visible,
                     ZIndex = 9
                 })
 
-                -- Slider fill
-                local percent = (default - min) / (max - min)
-                slider.objects.fill = create("Square", {
-                    Size = Vector2.new((sliderWidth - 2) * percent, 10),
-                    Position = window.position + Vector2.new(baseX + 1, baseY + 17),
-                    Color = library.theme.accent,
+                -- Value
+                local valText = tostring(default) .. suffix
+                slider.objects.value = create("Text", {
+                    Text = valText,
+                    Size = 13,
+                    Font = 2,
+                    Color = t.text,
+                    Outline = true,
+                    OutlineColor = Color3.new(0, 0, 0),
+                    Position = window.pos + Vector2.new(baseX + sliderWidth - textBounds(valText, 13).X, section.contentY + offset),
+                    Visible = section.visible,
+                    ZIndex = 9
+                })
+
+                -- Track outline
+                slider.objects.trackOutline = create("Square", {
+                    Size = Vector2.new(sliderWidth, 10),
+                    Position = window.pos + Vector2.new(baseX, section.contentY + offset + 16),
+                    Color = t.outline,
                     Filled = true,
                     Thickness = 0,
-                    Visible = page.visible,
+                    Visible = section.visible,
+                    ZIndex = 9
+                })
+
+                -- Track background
+                slider.objects.track = create("Square", {
+                    Size = Vector2.new(sliderWidth - 2, 8),
+                    Position = window.pos + Vector2.new(baseX + 1, section.contentY + offset + 17),
+                    Color = t.elementbg,
+                    Filled = true,
+                    Thickness = 0,
+                    Visible = section.visible,
                     ZIndex = 10
                 })
 
+                -- Fill
+                local pct = (default - min) / (max - min)
+                slider.objects.fill = create("Square", {
+                    Size = Vector2.new((sliderWidth - 2) * pct, 8),
+                    Position = window.pos + Vector2.new(baseX + 1, section.contentY + offset + 17),
+                    Color = a,
+                    Filled = true,
+                    Thickness = 0,
+                    Visible = section.visible,
+                    ZIndex = 11
+                })
+
                 slider.baseX = baseX
-                slider.baseY = baseY - 36 - section.yOffset
+                slider.baseY = section.contentY + offset
                 slider.width = sliderWidth
+                slider.suffix = suffix
 
                 function slider:UpdatePositions()
-                    local pos = window.position
-                    local y = 36 + section.yOffset + slider.baseY
-                    slider.objects.label.Position = pos + Vector2.new(slider.baseX, y)
-                    slider.objects.value.Position = pos + Vector2.new(slider.baseX + slider.width - getTextSize(tostring(slider.value), 13).X, y)
-                    slider.objects.outline.Position = pos + Vector2.new(slider.baseX, y + 16)
-                    slider.objects.bg.Position = pos + Vector2.new(slider.baseX + 1, y + 17)
-                    slider.objects.fill.Position = pos + Vector2.new(slider.baseX + 1, y + 17)
+                    local p = window.pos
+                    local valText = tostring(slider.value) .. slider.suffix
+                    slider.objects.label.Position = p + Vector2.new(slider.baseX, slider.baseY)
+                    slider.objects.value.Position = p + Vector2.new(slider.baseX + slider.width - textBounds(valText, 13).X, slider.baseY)
+                    slider.objects.trackOutline.Position = p + Vector2.new(slider.baseX, slider.baseY + 16)
+                    slider.objects.track.Position = p + Vector2.new(slider.baseX + 1, slider.baseY + 17)
+                    slider.objects.fill.Position = p + Vector2.new(slider.baseX + 1, slider.baseY + 17)
                 end
 
                 function slider:SetVisible(state)
@@ -737,23 +848,23 @@ function library:New(config)
                     slider.value = value
 
                     local pct = (value - min) / (max - min)
-                    slider.objects.fill.Size = Vector2.new((slider.width - 2) * pct, 10)
-                    slider.objects.value.Text = tostring(value)
-                    slider.objects.value.Position = window.position + Vector2.new(slider.baseX + slider.width - getTextSize(tostring(value), 13).X, 36 + section.yOffset + slider.baseY)
+                    slider.objects.fill.Size = Vector2.new((slider.width - 2) * pct, 8)
+
+                    local valText = tostring(value) .. slider.suffix
+                    slider.objects.value.Text = valText
+                    slider.objects.value.Position = window.pos + Vector2.new(slider.baseX + slider.width - textBounds(valText, 13).X, slider.baseY)
 
                     if flag then library.flags[flag] = value end
                     pcall(callback, value)
                 end
 
-                function slider:Get()
-                    return slider.value
-                end
+                function slider:Get() return slider.value end
 
-                -- Drag detection
+                -- Drag
                 table.insert(library.connections, UIS.InputBegan:Connect(function(input)
-                    if input.UserInputType == Enum.UserInputType.MouseButton1 and window.visible and page.visible then
-                        local pos = slider.objects.outline.Position
-                        if isMouseOver(pos.X, pos.Y, slider.width, 12) then
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 and library.open and section.visible then
+                        local pos = slider.objects.trackOutline.Position
+                        if mouseOver(pos.X, pos.Y, slider.width, 10) then
                             slider.dragging = true
                         end
                     end
@@ -766,12 +877,11 @@ function library:New(config)
                 end))
 
                 table.insert(library.connections, RS.RenderStepped:Connect(function()
-                    if slider.dragging and window.visible then
+                    if slider.dragging and library.open then
                         local mouse = UIS:GetMouseLocation()
-                        local pos = slider.objects.outline.Position
+                        local pos = slider.objects.trackOutline.Position
                         local pct = math.clamp((mouse.X - pos.X) / slider.width, 0, 1)
-                        local value = min + (max - min) * pct
-                        slider:Set(value)
+                        slider:Set(min + (max - min) * pct)
                     end
                 end))
 
@@ -780,66 +890,167 @@ function library:New(config)
                     library.pointers[flag] = slider
                 end
 
-                section.elementOffset = section.elementOffset + 36
-                table.insert(section.elements, slider)
+                if side == "left" then
+                    section.leftOffset = section.leftOffset + 32
+                else
+                    section.rightOffset = section.rightOffset + 32
+                end
+                table.insert(elements, slider)
                 return slider
             end
 
-            -- Dropdown
+            -- BUTTON
+            function section:Button(config)
+                config = config or {}
+                local buttonName = config.name or "Button"
+                local side = (config.side or "left"):lower()
+                local callback = config.callback or function() end
+
+                local elements = side == "left" and section.leftElements or section.rightElements
+                local offset = side == "left" and section.leftOffset or section.rightOffset
+                local baseX = side == "left" and (section.contentX + 10) or (section.rightX + 10)
+                local btnWidth = section.contentWidth - 20
+
+                local button = {
+                    side = side,
+                    yOffset = offset,
+                    objects = {}
+                }
+
+                -- Outline
+                button.objects.outline = create("Square", {
+                    Size = Vector2.new(btnWidth, 20),
+                    Position = window.pos + Vector2.new(baseX, section.contentY + offset),
+                    Color = t.outline,
+                    Filled = true,
+                    Thickness = 0,
+                    Visible = section.visible,
+                    ZIndex = 9
+                })
+
+                -- Background
+                button.objects.bg = create("Square", {
+                    Size = Vector2.new(btnWidth - 2, 18),
+                    Position = window.pos + Vector2.new(baseX + 1, section.contentY + offset + 1),
+                    Color = t.elementbg,
+                    Filled = true,
+                    Thickness = 0,
+                    Visible = section.visible,
+                    ZIndex = 10
+                })
+
+                -- Label
+                button.objects.label = create("Text", {
+                    Text = buttonName,
+                    Size = 13,
+                    Font = 2,
+                    Color = t.dimtext,
+                    Outline = true,
+                    OutlineColor = Color3.new(0, 0, 0),
+                    Center = true,
+                    Position = window.pos + Vector2.new(baseX + btnWidth/2, section.contentY + offset + 3),
+                    Visible = section.visible,
+                    ZIndex = 11
+                })
+
+                button.baseX = baseX
+                button.baseY = section.contentY + offset
+                button.width = btnWidth
+
+                function button:UpdatePositions()
+                    local p = window.pos
+                    button.objects.outline.Position = p + Vector2.new(button.baseX, button.baseY)
+                    button.objects.bg.Position = p + Vector2.new(button.baseX + 1, button.baseY + 1)
+                    button.objects.label.Position = p + Vector2.new(button.baseX + button.width/2, button.baseY + 3)
+                end
+
+                function button:SetVisible(state)
+                    for _, obj in pairs(button.objects) do
+                        pcall(function() obj.Visible = state end)
+                    end
+                end
+
+                -- Click
+                table.insert(library.connections, UIS.InputBegan:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 and library.open and section.visible then
+                        local pos = button.objects.outline.Position
+                        if mouseOver(pos.X, pos.Y, button.width, 20) then
+                            button.objects.bg.Color = t.inline
+                            pcall(callback)
+                            task.delay(0.1, function()
+                                pcall(function() button.objects.bg.Color = t.elementbg end)
+                            end)
+                        end
+                    end
+                end))
+
+                if side == "left" then
+                    section.leftOffset = section.leftOffset + 26
+                else
+                    section.rightOffset = section.rightOffset + 26
+                end
+                table.insert(elements, button)
+                return button
+            end
+
+            -- DROPDOWN
             function section:Dropdown(config)
                 config = config or {}
                 local dropdownName = config.name or "Dropdown"
+                local side = (config.side or "left"):lower()
                 local items = config.items or {}
                 local default = config.default or (items[1] or "")
                 local flag = config.flag
                 local callback = config.callback or function() end
 
+                local elements = side == "left" and section.leftElements or section.rightElements
+                local offset = side == "left" and section.leftOffset or section.rightOffset
+                local baseX = side == "left" and (section.contentX + 10) or (section.rightX + 10)
+                local ddWidth = section.contentWidth - 20
+
                 local dropdown = {
                     value = default,
                     items = items,
                     open = false,
-                    yPos = section.elementOffset,
+                    side = side,
+                    yOffset = offset,
                     objects = {},
                     itemObjects = {}
                 }
-
-                local baseX = section.xOffset + 8
-                local baseY = 36 + section.yOffset + section.elementOffset
-                local ddWidth = section.width - 16
 
                 -- Label
                 dropdown.objects.label = create("Text", {
                     Text = dropdownName,
                     Size = 13,
                     Font = 2,
-                    Color = library.theme.text,
+                    Color = t.dimtext,
                     Outline = true,
                     OutlineColor = Color3.new(0, 0, 0),
-                    Position = window.position + Vector2.new(baseX, baseY),
-                    Visible = page.visible,
-                    ZIndex = 8
-                })
-
-                -- Dropdown outline
-                dropdown.objects.outline = create("Square", {
-                    Size = Vector2.new(ddWidth, 18),
-                    Position = window.position + Vector2.new(baseX, baseY + 16),
-                    Color = library.theme.outline,
-                    Filled = true,
-                    Thickness = 0,
-                    Visible = page.visible,
-                    ZIndex = 8
-                })
-
-                -- Dropdown background
-                dropdown.objects.bg = create("Square", {
-                    Size = Vector2.new(ddWidth - 2, 16),
-                    Position = window.position + Vector2.new(baseX + 1, baseY + 17),
-                    Color = library.theme.topbar,
-                    Filled = true,
-                    Thickness = 0,
-                    Visible = page.visible,
+                    Position = window.pos + Vector2.new(baseX, section.contentY + offset),
+                    Visible = section.visible,
                     ZIndex = 9
+                })
+
+                -- Outline
+                dropdown.objects.outline = create("Square", {
+                    Size = Vector2.new(ddWidth, 20),
+                    Position = window.pos + Vector2.new(baseX, section.contentY + offset + 16),
+                    Color = t.outline,
+                    Filled = true,
+                    Thickness = 0,
+                    Visible = section.visible,
+                    ZIndex = 9
+                })
+
+                -- Background
+                dropdown.objects.bg = create("Square", {
+                    Size = Vector2.new(ddWidth - 2, 18),
+                    Position = window.pos + Vector2.new(baseX + 1, section.contentY + offset + 17),
+                    Color = t.elementbg,
+                    Filled = true,
+                    Thickness = 0,
+                    Visible = section.visible,
+                    ZIndex = 10
                 })
 
                 -- Selected text
@@ -847,48 +1058,45 @@ function library:New(config)
                     Text = default,
                     Size = 13,
                     Font = 2,
-                    Color = library.theme.text,
+                    Color = t.text,
                     Outline = true,
                     OutlineColor = Color3.new(0, 0, 0),
-                    Position = window.position + Vector2.new(baseX + 4, baseY + 18),
-                    Visible = page.visible,
-                    ZIndex = 10
+                    Position = window.pos + Vector2.new(baseX + 6, section.contentY + offset + 19),
+                    Visible = section.visible,
+                    ZIndex = 11
                 })
 
                 -- Arrow
                 dropdown.objects.arrow = create("Text", {
-                    Text = "v",
+                    Text = "-",
                     Size = 13,
                     Font = 2,
-                    Color = library.theme.text,
+                    Color = t.dimtext,
                     Outline = true,
                     OutlineColor = Color3.new(0, 0, 0),
-                    Position = window.position + Vector2.new(baseX + ddWidth - 12, baseY + 18),
-                    Visible = page.visible,
-                    ZIndex = 10
+                    Position = window.pos + Vector2.new(baseX + ddWidth - 12, section.contentY + offset + 19),
+                    Visible = section.visible,
+                    ZIndex = 11
                 })
 
                 dropdown.baseX = baseX
-                dropdown.baseY = baseY - 36 - section.yOffset
+                dropdown.baseY = section.contentY + offset
                 dropdown.width = ddWidth
 
                 function dropdown:UpdatePositions()
-                    local pos = window.position
-                    local y = 36 + section.yOffset + dropdown.baseY
-                    dropdown.objects.label.Position = pos + Vector2.new(dropdown.baseX, y)
-                    dropdown.objects.outline.Position = pos + Vector2.new(dropdown.baseX, y + 16)
-                    dropdown.objects.bg.Position = pos + Vector2.new(dropdown.baseX + 1, y + 17)
-                    dropdown.objects.selected.Position = pos + Vector2.new(dropdown.baseX + 4, y + 18)
-                    dropdown.objects.arrow.Position = pos + Vector2.new(dropdown.baseX + dropdown.width - 12, y + 18)
+                    local p = window.pos
+                    dropdown.objects.label.Position = p + Vector2.new(dropdown.baseX, dropdown.baseY)
+                    dropdown.objects.outline.Position = p + Vector2.new(dropdown.baseX, dropdown.baseY + 16)
+                    dropdown.objects.bg.Position = p + Vector2.new(dropdown.baseX + 1, dropdown.baseY + 17)
+                    dropdown.objects.selected.Position = p + Vector2.new(dropdown.baseX + 6, dropdown.baseY + 19)
+                    dropdown.objects.arrow.Position = p + Vector2.new(dropdown.baseX + dropdown.width - 12, dropdown.baseY + 19)
                 end
 
                 function dropdown:SetVisible(state)
                     for _, obj in pairs(dropdown.objects) do
                         pcall(function() obj.Visible = state end)
                     end
-                    if not state then
-                        dropdown:Close()
-                    end
+                    if not state then dropdown:Close() end
                 end
 
                 function dropdown:Close()
@@ -904,16 +1112,15 @@ function library:New(config)
                         dropdown:Close()
                         return
                     end
-
                     dropdown.open = true
-                    local pos = dropdown.objects.outline.Position
-                    local listHeight = #items * 16 + 4
 
-                    -- List background
+                    local pos = dropdown.objects.outline.Position
+                    local listH = math.min(#items * 18 + 4, 150)
+
                     local listBg = create("Square", {
-                        Size = Vector2.new(dropdown.width, listHeight),
-                        Position = Vector2.new(pos.X, pos.Y + 20),
-                        Color = library.theme.section,
+                        Size = Vector2.new(dropdown.width, listH),
+                        Position = Vector2.new(pos.X, pos.Y + 22),
+                        Color = t.elementbg,
                         Filled = true,
                         Thickness = 0,
                         Visible = true,
@@ -921,11 +1128,10 @@ function library:New(config)
                     })
                     table.insert(dropdown.itemObjects, listBg)
 
-                    -- List outline
                     local listOutline = create("Square", {
-                        Size = Vector2.new(dropdown.width, listHeight),
-                        Position = Vector2.new(pos.X, pos.Y + 20),
-                        Color = library.theme.outline,
+                        Size = Vector2.new(dropdown.width, listH),
+                        Position = Vector2.new(pos.X, pos.Y + 22),
+                        Color = t.outline,
                         Filled = false,
                         Thickness = 1,
                         Visible = true,
@@ -933,16 +1139,15 @@ function library:New(config)
                     })
                     table.insert(dropdown.itemObjects, listOutline)
 
-                    -- Items
                     for i, item in ipairs(items) do
                         local itemText = create("Text", {
                             Text = item,
                             Size = 13,
                             Font = 2,
-                            Color = item == dropdown.value and library.theme.accent or library.theme.text,
+                            Color = item == dropdown.value and a or t.text,
                             Outline = true,
                             OutlineColor = Color3.new(0, 0, 0),
-                            Position = Vector2.new(pos.X + 4, pos.Y + 22 + (i-1) * 16),
+                            Position = Vector2.new(pos.X + 6, pos.Y + 24 + (i-1) * 18),
                             Visible = true,
                             ZIndex = 52
                         })
@@ -957,26 +1162,22 @@ function library:New(config)
                     pcall(callback, value)
                 end
 
-                function dropdown:Get()
-                    return dropdown.value
-                end
+                function dropdown:Get() return dropdown.value end
 
-                -- Click detection
+                -- Click
                 table.insert(library.connections, UIS.InputBegan:Connect(function(input)
-                    if input.UserInputType == Enum.UserInputType.MouseButton1 and window.visible and page.visible then
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 and library.open and section.visible then
                         local pos = dropdown.objects.outline.Position
 
-                        -- Main dropdown click
-                        if isMouseOver(pos.X, pos.Y, dropdown.width, 18) then
+                        if mouseOver(pos.X, pos.Y, dropdown.width, 20) then
                             dropdown:Open()
                             return
                         end
 
-                        -- Item selection
                         if dropdown.open then
                             for i, item in ipairs(items) do
-                                local itemY = pos.Y + 20 + (i-1) * 16
-                                if isMouseOver(pos.X, itemY, dropdown.width, 16) then
+                                local itemY = pos.Y + 22 + (i-1) * 18
+                                if mouseOver(pos.X, itemY, dropdown.width, 18) then
                                     dropdown:Set(item)
                                     dropdown:Close()
                                     return
@@ -993,78 +1194,87 @@ function library:New(config)
                 end
                 if default ~= "" then pcall(callback, default) end
 
-                section.elementOffset = section.elementOffset + 42
-                table.insert(section.elements, dropdown)
+                if side == "left" then
+                    section.leftOffset = section.leftOffset + 42
+                else
+                    section.rightOffset = section.rightOffset + 42
+                end
+                table.insert(elements, dropdown)
                 return dropdown
             end
 
-            -- Keybind
+            -- KEYBIND
             function section:Keybind(config)
                 config = config or {}
                 local keybindName = config.name or "Keybind"
+                local side = (config.side or "left"):lower()
                 local default = config.default or Enum.KeyCode.Unknown
                 local flag = config.flag
                 local callback = config.callback or function() end
 
-                local keybind = {
-                    value = default,
-                    listening = false,
-                    yPos = section.elementOffset,
-                    objects = {}
-                }
+                local elements = side == "left" and section.leftElements or section.rightElements
+                local offset = side == "left" and section.leftOffset or section.rightOffset
+                local baseX = side == "left" and (section.contentX + 10) or (section.rightX + 10)
+                local kbWidth = section.contentWidth - 20
 
                 local keyNames = {
-                    [Enum.KeyCode.LeftShift] = "LS",
-                    [Enum.KeyCode.RightShift] = "RS",
-                    [Enum.KeyCode.LeftControl] = "LC",
-                    [Enum.KeyCode.RightControl] = "RC"
+                    [Enum.KeyCode.LeftShift] = "LS", [Enum.KeyCode.RightShift] = "RS",
+                    [Enum.KeyCode.LeftControl] = "LC", [Enum.KeyCode.RightControl] = "RC",
+                    [Enum.KeyCode.LeftAlt] = "LA", [Enum.KeyCode.RightAlt] = "RA",
+                    [Enum.UserInputType.MouseButton1] = "MB1", [Enum.UserInputType.MouseButton2] = "MB2"
                 }
 
                 local function getKeyName(key)
                     if keyNames[key] then return keyNames[key] end
                     if typeof(key) == "EnumItem" then return key.Name end
-                    return "None"
+                    return "-"
                 end
 
-                local baseX = section.xOffset + 8
-                local baseY = 36 + section.yOffset + section.elementOffset
+                local keybind = {
+                    value = default,
+                    listening = false,
+                    side = side,
+                    yOffset = offset,
+                    objects = {}
+                }
 
                 -- Label
                 keybind.objects.label = create("Text", {
                     Text = keybindName,
                     Size = 13,
                     Font = 2,
-                    Color = library.theme.text,
+                    Color = t.dimtext,
                     Outline = true,
                     OutlineColor = Color3.new(0, 0, 0),
-                    Position = window.position + Vector2.new(baseX, baseY),
-                    Visible = page.visible,
-                    ZIndex = 8
+                    Position = window.pos + Vector2.new(baseX, section.contentY + offset + 2),
+                    Visible = section.visible,
+                    ZIndex = 9
                 })
 
-                -- Key text
+                -- Key display
                 local keyText = "[" .. getKeyName(default) .. "]"
                 keybind.objects.key = create("Text", {
                     Text = keyText,
                     Size = 13,
                     Font = 2,
-                    Color = library.theme.dimtext,
+                    Color = t.dimtext,
                     Outline = true,
                     OutlineColor = Color3.new(0, 0, 0),
-                    Position = window.position + Vector2.new(baseX + section.width - 16 - getTextSize(keyText, 13).X, baseY),
-                    Visible = page.visible,
-                    ZIndex = 8
+                    Position = window.pos + Vector2.new(baseX + kbWidth - textBounds(keyText, 13).X, section.contentY + offset + 2),
+                    Visible = section.visible,
+                    ZIndex = 9
                 })
 
                 keybind.baseX = baseX
-                keybind.baseY = baseY - 36 - section.yOffset
+                keybind.baseY = section.contentY + offset
+                keybind.width = kbWidth
+                keybind.getKeyName = getKeyName
 
                 function keybind:UpdatePositions()
-                    local pos = window.position
-                    local y = 36 + section.yOffset + keybind.baseY
-                    local keyText = "[" .. getKeyName(keybind.value) .. "]"
-                    keybind.objects.label.Position = pos + Vector2.new(keybind.baseX, y)
-                    keybind.objects.key.Position = pos + Vector2.new(keybind.baseX + section.width - 16 - getTextSize(keyText, 13).X, y)
+                    local p = window.pos
+                    local keyText = "[" .. keybind.getKeyName(keybind.value) .. "]"
+                    keybind.objects.label.Position = p + Vector2.new(keybind.baseX, keybind.baseY + 2)
+                    keybind.objects.key.Position = p + Vector2.new(keybind.baseX + keybind.width - textBounds(keyText, 13).X, keybind.baseY + 2)
                 end
 
                 function keybind:SetVisible(state)
@@ -1077,36 +1287,31 @@ function library:New(config)
                     keybind.value = key
                     local keyText = "[" .. getKeyName(key) .. "]"
                     keybind.objects.key.Text = keyText
-                    keybind.objects.key.Position = window.position + Vector2.new(keybind.baseX + section.width - 16 - getTextSize(keyText, 13).X, 36 + section.yOffset + keybind.baseY)
+                    keybind.objects.key.Position = window.pos + Vector2.new(keybind.baseX + keybind.width - textBounds(keyText, 13).X, keybind.baseY + 2)
                     if flag then library.flags[flag] = key end
                 end
 
-                function keybind:Get()
-                    return keybind.value
-                end
+                function keybind:Get() return keybind.value end
 
-                -- Input detection
+                -- Input
                 table.insert(library.connections, UIS.InputBegan:Connect(function(input)
                     if keybind.listening then
                         local key = input.KeyCode ~= Enum.KeyCode.Unknown and input.KeyCode or input.UserInputType
-                        if key == Enum.KeyCode.Escape then
-                            key = Enum.KeyCode.Unknown
-                        end
+                        if key == Enum.KeyCode.Escape then key = Enum.KeyCode.Unknown end
                         keybind:Set(key)
                         keybind.listening = false
-                        keybind.objects.key.Color = library.theme.dimtext
+                        keybind.objects.key.Color = t.dimtext
                         return
                     end
 
-                    if input.UserInputType == Enum.UserInputType.MouseButton1 and window.visible and page.visible then
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 and library.open and section.visible then
                         local pos = keybind.objects.label.Position
-                        if isMouseOver(pos.X, pos.Y, section.width - 16, 14) then
+                        if mouseOver(pos.X, pos.Y - 2, keybind.width, 18) then
                             keybind.listening = true
-                            keybind.objects.key.Color = library.theme.accent
+                            keybind.objects.key.Color = a
                         end
                     end
 
-                    -- Callback when key pressed
                     if keybind.value ~= Enum.KeyCode.Unknown then
                         if input.KeyCode == keybind.value or input.UserInputType == keybind.value then
                             pcall(callback, keybind.value)
@@ -1119,10 +1324,182 @@ function library:New(config)
                     library.pointers[flag] = keybind
                 end
 
-                section.elementOffset = section.elementOffset + 18
-                table.insert(section.elements, keybind)
+                if side == "left" then
+                    section.leftOffset = section.leftOffset + 20
+                else
+                    section.rightOffset = section.rightOffset + 20
+                end
+                table.insert(elements, keybind)
                 return keybind
             end
+
+            -- TEXTBOX
+            function section:Textbox(config)
+                config = config or {}
+                local textboxName = config.name or "Textbox"
+                local side = (config.side or "left"):lower()
+                local placeholder = config.placeholder or "Enter text..."
+                local default = config.default or ""
+                local flag = config.flag
+                local callback = config.callback or function() end
+
+                local elements = side == "left" and section.leftElements or section.rightElements
+                local offset = side == "left" and section.leftOffset or section.rightOffset
+                local baseX = side == "left" and (section.contentX + 10) or (section.rightX + 10)
+                local tbWidth = section.contentWidth - 20
+
+                local textbox = {
+                    value = default,
+                    focused = false,
+                    side = side,
+                    yOffset = offset,
+                    objects = {}
+                }
+
+                -- Outline
+                textbox.objects.outline = create("Square", {
+                    Size = Vector2.new(tbWidth, 20),
+                    Position = window.pos + Vector2.new(baseX, section.contentY + offset),
+                    Color = t.outline,
+                    Filled = true,
+                    Thickness = 0,
+                    Visible = section.visible,
+                    ZIndex = 9
+                })
+
+                -- Background
+                textbox.objects.bg = create("Square", {
+                    Size = Vector2.new(tbWidth - 2, 18),
+                    Position = window.pos + Vector2.new(baseX + 1, section.contentY + offset + 1),
+                    Color = t.elementbg,
+                    Filled = true,
+                    Thickness = 0,
+                    Visible = section.visible,
+                    ZIndex = 10
+                })
+
+                -- Text
+                textbox.objects.text = create("Text", {
+                    Text = default ~= "" and default or placeholder,
+                    Size = 13,
+                    Font = 2,
+                    Color = default ~= "" and t.text or t.dimtext,
+                    Outline = true,
+                    OutlineColor = Color3.new(0, 0, 0),
+                    Position = window.pos + Vector2.new(baseX + 6, section.contentY + offset + 3),
+                    Visible = section.visible,
+                    ZIndex = 11
+                })
+
+                -- Label (right side)
+                textbox.objects.label = create("Text", {
+                    Text = textboxName,
+                    Size = 13,
+                    Font = 2,
+                    Color = t.dimtext,
+                    Outline = true,
+                    OutlineColor = Color3.new(0, 0, 0),
+                    Position = window.pos + Vector2.new(baseX + tbWidth + 6, section.contentY + offset + 3),
+                    Visible = section.visible,
+                    ZIndex = 9
+                })
+
+                textbox.baseX = baseX
+                textbox.baseY = section.contentY + offset
+                textbox.width = tbWidth
+                textbox.placeholder = placeholder
+
+                function textbox:UpdatePositions()
+                    local p = window.pos
+                    textbox.objects.outline.Position = p + Vector2.new(textbox.baseX, textbox.baseY)
+                    textbox.objects.bg.Position = p + Vector2.new(textbox.baseX + 1, textbox.baseY + 1)
+                    textbox.objects.text.Position = p + Vector2.new(textbox.baseX + 6, textbox.baseY + 3)
+                    textbox.objects.label.Position = p + Vector2.new(textbox.baseX + textbox.width + 6, textbox.baseY + 3)
+                end
+
+                function textbox:SetVisible(state)
+                    for _, obj in pairs(textbox.objects) do
+                        pcall(function() obj.Visible = state end)
+                    end
+                end
+
+                function textbox:Set(value)
+                    textbox.value = value
+                    textbox.objects.text.Text = value ~= "" and value or placeholder
+                    textbox.objects.text.Color = value ~= "" and t.text or t.dimtext
+                    if flag then library.flags[flag] = value end
+                    pcall(callback, value)
+                end
+
+                function textbox:Get() return textbox.value end
+
+                -- Focus handling
+                table.insert(library.connections, UIS.InputBegan:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 and library.open and section.visible then
+                        local pos = textbox.objects.outline.Position
+                        if mouseOver(pos.X, pos.Y, textbox.width, 20) then
+                            textbox.focused = true
+                            textbox.objects.outline.Color = a
+                            textbox.objects.text.Text = textbox.value
+                            textbox.objects.text.Color = t.text
+                        else
+                            if textbox.focused then
+                                textbox.focused = false
+                                textbox.objects.outline.Color = t.outline
+                                if textbox.value == "" then
+                                    textbox.objects.text.Text = placeholder
+                                    textbox.objects.text.Color = t.dimtext
+                                end
+                            end
+                        end
+                    end
+
+                    if textbox.focused and input.UserInputType == Enum.UserInputType.Keyboard then
+                        local key = input.KeyCode
+                        if key == Enum.KeyCode.Backspace then
+                            textbox.value = textbox.value:sub(1, -2)
+                        elseif key == Enum.KeyCode.Return then
+                            textbox.focused = false
+                            textbox.objects.outline.Color = t.outline
+                            pcall(callback, textbox.value)
+                        elseif key == Enum.KeyCode.Space then
+                            textbox.value = textbox.value .. " "
+                        else
+                            local char = UIS:GetStringForKeyCode(key)
+                            if char and #char == 1 then
+                                local shift = UIS:IsKeyDown(Enum.KeyCode.LeftShift) or UIS:IsKeyDown(Enum.KeyCode.RightShift)
+                                textbox.value = textbox.value .. (shift and char:upper() or char:lower())
+                            end
+                        end
+                        textbox.objects.text.Text = textbox.value ~= "" and textbox.value or placeholder
+                        textbox.objects.text.Color = textbox.value ~= "" and t.text or t.dimtext
+                        if flag then library.flags[flag] = textbox.value end
+                    end
+                end))
+
+                if flag then
+                    library.flags[flag] = default
+                    library.pointers[flag] = textbox
+                end
+
+                if side == "left" then
+                    section.leftOffset = section.leftOffset + 26
+                else
+                    section.rightOffset = section.rightOffset + 26
+                end
+                table.insert(elements, textbox)
+                return textbox
+            end
+
+            -- Click handler for section button
+            table.insert(library.connections, UIS.InputBegan:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseButton1 and library.open and page.visible then
+                    local pos = sectionBtn.objects.text.Position
+                    if mouseOver(pos.X - 8, pos.Y - 2, 100, 18) then
+                        section:Show()
+                    end
+                end
+            end))
 
             table.insert(page.sections, section)
             return section
@@ -1134,9 +1511,9 @@ function library:New(config)
 
     -- Dragging
     table.insert(library.connections, UIS.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 and window.visible then
-            local pos = window.position
-            if isMouseOver(pos.X, pos.Y, sizeX, 25) then
+        if input.UserInputType == Enum.UserInputType.MouseButton1 and library.open then
+            local pos = window.pos
+            if mouseOver(pos.X, pos.Y, sizeX, 24) then
                 window.dragging = true
                 local mouse = UIS:GetMouseLocation()
                 window.dragOffset = Vector2.new(mouse.X - pos.X, mouse.Y - pos.Y)
@@ -1144,15 +1521,15 @@ function library:New(config)
 
             -- Tab clicks
             for _, page in pairs(window.pages) do
-                local tabPos = page.objects.tabOutline.Position
-                if isMouseOver(tabPos.X, tabPos.Y, 110, 20) then
+                local tabPos = page.objects.tabText.Position
+                if mouseOver(tabPos.X - 6, tabPos.Y - 3, page.tabWidth, 20) then
                     page:Show()
                 end
             end
         end
 
         -- Toggle key
-        if input.KeyCode == window.toggleKey then
+        if input.KeyCode == Enum.KeyCode.RightShift then
             window:Toggle()
         end
     end))
@@ -1164,27 +1541,25 @@ function library:New(config)
     end))
 
     table.insert(library.connections, RS.RenderStepped:Connect(function()
-        if window.dragging and window.visible then
+        if window.dragging and library.open then
             local mouse = UIS:GetMouseLocation()
-            window.position = Vector2.new(mouse.X - window.dragOffset.X, mouse.Y - window.dragOffset.Y)
+            window.pos = Vector2.new(mouse.X - window.dragOffset.X, mouse.Y - window.dragOffset.Y)
             window:UpdatePositions()
         end
     end))
 
-    -- Initialize
     function window:Init()
         if window.pages[1] then
             window.pages[1]:Show()
         end
     end
 
-    -- Unload
     function window:Unload()
         for _, conn in pairs(library.connections) do
             pcall(function() conn:Disconnect() end)
         end
-        for _, drawing in pairs(library.drawings) do
-            pcall(function() drawing:Remove() end)
+        for _, obj in pairs(library.drawings) do
+            pcall(function() obj:Remove() end)
         end
         library.drawings = {}
         library.connections = {}
