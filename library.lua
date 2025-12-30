@@ -1,35 +1,73 @@
 --[[
-    NexusLib v4.3.4 - Enhanced Drawing UI Library
-
-    FIXES in v4.3.4:
-    - Toggle checkbox colors update when accent/theme changes
-    - ColorPicker previews can track accent color (trackAccent=true)
-    - All theme colors properly reference library.theme (not captured vars)
-
-    FIXES in v4.3.3:
-    - Watermark and KeybindList SetEnabled available immediately
-    - Tab text color updates with theme changes
+    ╔═══════════════════════════════════════════════════════════════════════════╗
+    ║                           NexusLib v4.3.4                                 ║
+    ║                   Enhanced Drawing UI Library for Roblox                  ║
+    ╠═══════════════════════════════════════════════════════════════════════════╣
+    ║  Features:                                                                ║
+    ║    • Modern dark theme with multiple color schemes                        ║
+    ║    • Draggable windows, watermark, and keybind list                       ║
+    ║    • Full element set: Toggle, Slider, Button, Dropdown, Keybind,         ║
+    ║      ColorPicker, Textbox, Label                                          ║
+    ║    • Notification system with animations                                  ║
+    ║    • Config save/load system                                              ║
+    ║    • Real-time theme and accent color switching                           ║
+    ╚═══════════════════════════════════════════════════════════════════════════╝
 ]]
+
+--============================================================================--
+--                              SAFETY CHECK                                  --
+--============================================================================--
 
 if not Drawing or not Drawing.new then
     warn("NexusLib: Drawing API not supported")
     return {
-        New = function() return {Page = function() return {Section = function() return {} end} end, Init = function() end, Unload = function() end} end,
-        watermark = {SetEnabled = function() end},
-        keybindList = {SetEnabled = function() end}
+        New = function()
+            return {
+                Page = function()
+                    return {
+                        Section = function()
+                            return {}
+                        end
+                    }
+                end,
+                Init = function() end,
+                Unload = function() end
+            }
+        end,
+        watermark = { SetEnabled = function() end },
+        keybindList = { SetEnabled = function() end }
     }
 end
 
+--============================================================================--
+--                              LIBRARY CORE                                  --
+--============================================================================--
+
 local library = {
+    -- Storage
     drawings = {},
     connections = {},
     flags = {},
     pointers = {},
     notifications = {},
+    windows = {},
+
+    -- Tracking for dynamic updates
+    accentObjects = {},
+    themeObjects = {},
+    tabTextObjects = {},
+    toggleObjects = {},
+    colorPickerPreviews = {},
+
+    -- State
     open = true,
+    blockingInput = false,
+
+    -- Appearance
     accent = Color3.fromRGB(76, 162, 252),
     menuKeybind = Enum.KeyCode.RightShift,
-    blockingInput = false,
+
+    -- Default theme colors
     theme = {
         background = Color3.fromRGB(12, 12, 12),
         topbar = Color3.fromRGB(16, 16, 16),
@@ -43,14 +81,12 @@ local library = {
         success = Color3.fromRGB(80, 200, 120),
         warning = Color3.fromRGB(255, 180, 50),
         error = Color3.fromRGB(240, 80, 80)
-    },
-    windows = {},
-    accentObjects = {},
-    themeObjects = {},
-    tabTextObjects = {},
-    toggleObjects = {},      -- NEW: Track toggle fills for accent updates
-    colorPickerPreviews = {} -- NEW: Track colorpicker previews for accent updates
+    }
 }
+
+--============================================================================--
+--                              THEME PRESETS                                 --
+--============================================================================--
 
 library.themes = {
     Default = {
@@ -65,6 +101,7 @@ library.themes = {
         dimtext = Color3.fromRGB(120, 120, 120),
         elementbg = Color3.fromRGB(22, 22, 22)
     },
+
     Midnight = {
         accent = Color3.fromRGB(138, 92, 224),
         background = Color3.fromRGB(14, 14, 20),
@@ -77,6 +114,7 @@ library.themes = {
         dimtext = Color3.fromRGB(100, 100, 130),
         elementbg = Color3.fromRGB(24, 24, 34)
     },
+
     Rose = {
         accent = Color3.fromRGB(226, 80, 130),
         background = Color3.fromRGB(14, 12, 14),
@@ -89,6 +127,7 @@ library.themes = {
         dimtext = Color3.fromRGB(130, 100, 120),
         elementbg = Color3.fromRGB(28, 22, 28)
     },
+
     Ocean = {
         accent = Color3.fromRGB(60, 180, 220),
         background = Color3.fromRGB(10, 14, 18),
@@ -101,6 +140,7 @@ library.themes = {
         dimtext = Color3.fromRGB(90, 120, 140),
         elementbg = Color3.fromRGB(18, 26, 34)
     },
+
     Emerald = {
         accent = Color3.fromRGB(80, 200, 120),
         background = Color3.fromRGB(10, 14, 12),
@@ -115,87 +155,182 @@ library.themes = {
     }
 }
 
--- Pre-initialize watermark and keybindList with SetEnabled methods
+--============================================================================--
+--                         PRE-INITIALIZED COMPONENTS                         --
+--============================================================================--
+
+-- Watermark (SetEnabled available immediately)
 library.watermark = {
-    enabled = false, objects = {}, position = Vector2.new(10, 10),
-    dragging = false, dragOffset = Vector2.new(0, 0), _initialized = false
+    enabled = false,
+    objects = {},
+    position = Vector2.new(10, 10),
+    dragging = false,
+    dragOffset = Vector2.new(0, 0),
+    _initialized = false
 }
+
 function library.watermark:SetEnabled(state)
     library.watermark.enabled = state
     if library.watermark._initialized then
-        for _, obj in pairs(library.watermark.objects) do pcall(function() obj.Visible = state end) end
-    end
-end
-
-library.keybindList = {
-    enabled = false, objects = {}, items = {}, position = Vector2.new(10, 50),
-    dragging = false, dragOffset = Vector2.new(0, 0), _initialized = false
-}
-function library.keybindList:SetEnabled(state)
-    library.keybindList.enabled = state
-    if library.keybindList._initialized then
-        for _, obj in pairs(library.keybindList.objects) do pcall(function() obj.Visible = state end) end
-        for _, item in pairs(library.keybindList.items) do
-            if item.active then for _, obj in pairs(item.objects) do pcall(function() obj.Visible = state end) end end
+        for _, obj in pairs(library.watermark.objects) do
+            pcall(function() obj.Visible = state end)
         end
     end
 end
 
-local UIS = game:GetService("UserInputService")
-local RS = game:GetService("RunService")
+-- Keybind List (SetEnabled available immediately)
+library.keybindList = {
+    enabled = false,
+    objects = {},
+    items = {},
+    position = Vector2.new(10, 50),
+    dragging = false,
+    dragOffset = Vector2.new(0, 0),
+    _initialized = false
+}
+
+function library.keybindList:SetEnabled(state)
+    library.keybindList.enabled = state
+    if library.keybindList._initialized then
+        for _, obj in pairs(library.keybindList.objects) do
+            pcall(function() obj.Visible = state end)
+        end
+        for _, item in pairs(library.keybindList.items) do
+            if item.active then
+                for _, obj in pairs(item.objects) do
+                    pcall(function() obj.Visible = state end)
+                end
+            end
+        end
+    end
+end
+
+--============================================================================--
+--                              SERVICES                                      --
+--============================================================================--
+
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 local Stats = game:GetService("Stats")
 local HttpService = game:GetService("HttpService")
 
-local function create(class, props)
-    local success, obj = pcall(function() return Drawing.new(class) end)
+--============================================================================--
+--                           UTILITY FUNCTIONS                                --
+--============================================================================--
+
+--- Creates a new Drawing object with the specified properties
+--- @param class string The Drawing class type
+--- @param properties table Properties to apply to the drawing
+--- @return table The created drawing object
+local function createDrawing(class, properties)
+    local success, obj = pcall(function()
+        return Drawing.new(class)
+    end)
+
     if not success or not obj then
-        return {Remove = function() end, Visible = false, Position = Vector2.new(0, 0), Size = Vector2.new(0, 0), Color = Color3.new(1, 1, 1), Text = ""}
+        return {
+            Remove = function() end,
+            Visible = false,
+            Position = Vector2.new(0, 0),
+            Size = Vector2.new(0, 0),
+            Color = Color3.new(1, 1, 1),
+            Text = ""
+        }
     end
-    for k, v in pairs(props or {}) do pcall(function() obj[k] = v end) end
+
+    for key, value in pairs(properties or {}) do
+        pcall(function()
+            obj[key] = value
+        end)
+    end
+
     table.insert(library.drawings, obj)
     return obj
 end
 
-local function remove(obj)
+--- Removes a drawing object and cleans up references
+--- @param obj table The drawing object to remove
+local function removeDrawing(obj)
     if not obj then return end
-    for i, v in pairs(library.drawings) do if v == obj then table.remove(library.drawings, i) break end end
-    pcall(function() obj:Remove() end)
+
+    for i, v in pairs(library.drawings) do
+        if v == obj then
+            table.remove(library.drawings, i)
+            break
+        end
+    end
+
+    pcall(function()
+        obj:Remove()
+    end)
 end
 
-local function textBounds(text, size)
+--- Gets the text bounds for a string
+--- @param text string The text to measure
+--- @param size number The font size
+--- @return Vector2 The text bounds
+local function getTextBounds(text, size)
     local success, result = pcall(function()
-        local t = Drawing.new("Text")
-        t.Text = text or ""
-        t.Size = size or 13
-        t.Font = 2
-        local b = t.TextBounds
-        t:Remove()
-        return b
+        local textObj = Drawing.new("Text")
+        textObj.Text = text or ""
+        textObj.Size = size or 13
+        textObj.Font = 2
+        local bounds = textObj.TextBounds
+        textObj:Remove()
+        return bounds
     end)
+
     return success and result or Vector2.new(50, 13)
 end
 
-local function mouseOver(x, y, w, h)
-    local success, mouse = pcall(function() return UIS:GetMouseLocation() end)
+--- Checks if the mouse is over a rectangular area
+--- @param x number X position
+--- @param y number Y position
+--- @param width number Width of the area
+--- @param height number Height of the area
+--- @return boolean
+local function isMouseOver(x, y, width, height)
+    local success, mouse = pcall(function()
+        return UserInputService:GetMouseLocation()
+    end)
+
     if not success then return false end
-    return mouse.X >= x and mouse.X <= x + w and mouse.Y >= y and mouse.Y <= y + h
+
+    return mouse.X >= x and mouse.X <= x + width and mouse.Y >= y and mouse.Y <= y + height
 end
 
+--- Converts RGB to HSV
+--- @param r number Red (0-255)
+--- @param g number Green (0-255)
+--- @param b number Blue (0-255)
+--- @return number, number, number Hue, Saturation, Value (0-1)
 local function rgbToHsv(r, g, b)
     r, g, b = r / 255, g / 255, b / 255
     local max, min = math.max(r, g, b), math.min(r, g, b)
     local h, s, v = 0, 0, max
     local d = max - min
+
     s = max == 0 and 0 or d / max
+
     if max ~= min then
-        if max == r then h = (g - b) / d + (g < b and 6 or 0)
-        elseif max == g then h = (b - r) / d + 2
-        else h = (r - g) / d + 4 end
+        if max == r then
+            h = (g - b) / d + (g < b and 6 or 0)
+        elseif max == g then
+            h = (b - r) / d + 2
+        else
+            h = (r - g) / d + 4
+        end
         h = h / 6
     end
+
     return h, s, v
 end
 
+--- Converts HSV to RGB
+--- @param h number Hue (0-1)
+--- @param s number Saturation (0-1)
+--- @param v number Value (0-1)
+--- @return number, number, number Red, Green, Blue (0-255)
 local function hsvToRgb(h, s, v)
     local r, g, b
     local i = math.floor(h * 6)
@@ -203,415 +338,1133 @@ local function hsvToRgb(h, s, v)
     local p = v * (1 - s)
     local q = v * (1 - f * s)
     local t = v * (1 - (1 - f) * s)
+
     i = i % 6
-    if i == 0 then r, g, b = v, t, p
-    elseif i == 1 then r, g, b = q, v, p
-    elseif i == 2 then r, g, b = p, v, t
-    elseif i == 3 then r, g, b = p, q, v
-    elseif i == 4 then r, g, b = t, p, v
-    else r, g, b = v, p, q end
+
+    if i == 0 then
+        r, g, b = v, t, p
+    elseif i == 1 then
+        r, g, b = q, v, p
+    elseif i == 2 then
+        r, g, b = p, v, t
+    elseif i == 3 then
+        r, g, b = p, q, v
+    elseif i == 4 then
+        r, g, b = t, p, v
+    else
+        r, g, b = v, p, q
+    end
+
     return math.floor(r * 255), math.floor(g * 255), math.floor(b * 255)
 end
 
-local function lerp(a, b, t) return a + (b - a) * t end
+--- Linear interpolation
+--- @param a number Start value
+--- @param b number End value
+--- @param t number Interpolation factor (0-1)
+--- @return number
+local function lerp(a, b, t)
+    return a + (b - a) * t
+end
 
+--- Key name mappings for display
 local keyNames = {
-    [Enum.KeyCode.LeftShift] = "LShift", [Enum.KeyCode.RightShift] = "RShift",
-    [Enum.KeyCode.LeftControl] = "LCtrl", [Enum.KeyCode.RightControl] = "RCtrl",
-    [Enum.KeyCode.LeftAlt] = "LAlt", [Enum.KeyCode.RightAlt] = "RAlt",
-    [Enum.KeyCode.CapsLock] = "Caps", [Enum.KeyCode.Tab] = "Tab",
-    [Enum.KeyCode.Backspace] = "Back", [Enum.KeyCode.Return] = "Enter",
-    [Enum.KeyCode.Space] = "Space", [Enum.KeyCode.Escape] = "Esc",
-    [Enum.UserInputType.MouseButton1] = "M1", [Enum.UserInputType.MouseButton2] = "M2",
+    [Enum.KeyCode.LeftShift] = "LShift",
+    [Enum.KeyCode.RightShift] = "RShift",
+    [Enum.KeyCode.LeftControl] = "LCtrl",
+    [Enum.KeyCode.RightControl] = "RCtrl",
+    [Enum.KeyCode.LeftAlt] = "LAlt",
+    [Enum.KeyCode.RightAlt] = "RAlt",
+    [Enum.KeyCode.CapsLock] = "Caps",
+    [Enum.KeyCode.Tab] = "Tab",
+    [Enum.KeyCode.Backspace] = "Back",
+    [Enum.KeyCode.Return] = "Enter",
+    [Enum.KeyCode.Space] = "Space",
+    [Enum.KeyCode.Escape] = "Esc",
+    [Enum.UserInputType.MouseButton1] = "M1",
+    [Enum.UserInputType.MouseButton2] = "M2",
     [Enum.UserInputType.MouseButton3] = "M3"
 }
 
+--- Gets the display name for a key/input
+--- @param key EnumItem The key or input type
+--- @return string
 local function getKeyName(key)
-    if keyNames[key] then return keyNames[key] end
-    if typeof(key) == "EnumItem" then return key.Name end
+    if keyNames[key] then
+        return keyNames[key]
+    end
+    if typeof(key) == "EnumItem" then
+        return key.Name
+    end
     return "None"
 end
 
--- FIXED: SetAccent now updates toggles and colorpicker previews
+--============================================================================--
+--                         REGISTRATION FUNCTIONS                             --
+--============================================================================--
+
+--- Registers an object for accent color updates
+--- @param obj table The drawing object
+--- @param property string The property to update
+local function registerAccent(obj, property)
+    table.insert(library.accentObjects, {
+        obj = obj,
+        property = property
+    })
+end
+
+--- Registers an object for theme color updates
+--- @param obj table The drawing object
+--- @param property string The property to update
+--- @param themeKey string The theme color key
+local function registerTheme(obj, property, themeKey)
+    table.insert(library.themeObjects, {
+        obj = obj,
+        property = property,
+        themeKey = themeKey
+    })
+end
+
+--- Registers a tab text object for theme updates
+--- @param obj table The text drawing object
+--- @param page table The page reference
+local function registerTabText(obj, page)
+    table.insert(library.tabTextObjects, {
+        obj = obj,
+        page = page
+    })
+end
+
+--- Registers a toggle fill object for accent updates
+--- @param obj table The fill drawing object
+--- @param toggle table The toggle reference
+local function registerToggle(obj, toggle)
+    table.insert(library.toggleObjects, {
+        obj = obj,
+        toggle = toggle
+    })
+end
+
+--============================================================================--
+--                          THEME FUNCTIONS                                   --
+--============================================================================--
+
+--- Sets the accent color and updates all registered objects
+--- @param color Color3 The new accent color
 function library:SetAccent(color)
     library.accent = color
+
+    -- Update all accent-registered objects
     for _, data in pairs(library.accentObjects) do
-        pcall(function() if data.obj and data.property then data.obj[data.property] = color end end)
+        pcall(function()
+            if data.obj and data.property then
+                data.obj[data.property] = color
+            end
+        end)
     end
+
+    -- Update active tab text colors
     for _, data in pairs(library.tabTextObjects) do
-        pcall(function() if data.page and data.page.visible and data.obj then data.obj.Color = color end end)
+        pcall(function()
+            if data.page and data.page.visible and data.obj then
+                data.obj.Color = color
+            end
+        end)
     end
-    -- NEW: Update toggle fills that are ON
+
+    -- Update toggle fills that are ON
     for _, data in pairs(library.toggleObjects) do
-        pcall(function() if data.toggle and data.toggle.value and data.obj then data.obj.Color = color end end)
+        pcall(function()
+            if data.toggle and data.toggle.value and data.obj then
+                data.obj.Color = color
+            end
+        end)
     end
-    -- NEW: Update colorpicker previews that track accent
+
+    -- Update colorpicker previews that track accent
     for _, data in pairs(library.colorPickerPreviews) do
         pcall(function()
             if data.trackAccent and data.obj then
                 data.obj.Color = color
-                if data.colorpicker then data.colorpicker.value = color end
+                if data.colorpicker then
+                    data.colorpicker.value = color
+                end
             end
         end)
     end
 end
 
+--- Sets the theme and updates all colors
+--- @param themeName string The name of the theme preset
 function library:SetTheme(themeName)
     local themeData = library.themes[themeName]
     if not themeData then return end
+
+    -- Apply theme colors
     for key, value in pairs(themeData) do
-        if key == "accent" then library:SetAccent(value)
-        elseif library.theme[key] then library.theme[key] = value end
+        if key == "accent" then
+            library:SetAccent(value)
+        elseif library.theme[key] then
+            library.theme[key] = value
+        end
     end
+
+    -- Update all theme-registered objects
     for _, data in pairs(library.themeObjects) do
-        pcall(function() if data.obj and data.property and data.themeKey then data.obj[data.property] = library.theme[data.themeKey] end end)
+        pcall(function()
+            if data.obj and data.property and data.themeKey then
+                data.obj[data.property] = library.theme[data.themeKey]
+            end
+        end)
     end
+
+    -- Update inactive tab text colors
     for _, data in pairs(library.tabTextObjects) do
-        pcall(function() if data.page and not data.page.visible and data.obj then data.obj.Color = library.theme.dimtext end end)
+        pcall(function()
+            if data.page and not data.page.visible and data.obj then
+                data.obj.Color = library.theme.dimtext
+            end
+        end)
     end
-    -- NEW: Update toggle fills that are OFF to new elementbg
+
+    -- Update toggle fills that are OFF
     for _, data in pairs(library.toggleObjects) do
-        pcall(function() if data.toggle and not data.toggle.value and data.obj then data.obj.Color = library.theme.elementbg end end)
+        pcall(function()
+            if data.toggle and not data.toggle.value and data.obj then
+                data.obj.Color = library.theme.elementbg
+            end
+        end)
     end
 end
 
-local function registerAccent(obj, property)
-    table.insert(library.accentObjects, {obj = obj, property = property})
-end
+--============================================================================--
+--                              WATERMARK                                     --
+--============================================================================--
 
-local function registerTheme(obj, property, themeKey)
-    table.insert(library.themeObjects, {obj = obj, property = property, themeKey = themeKey})
-end
-
-local function registerTabText(obj, page)
-    table.insert(library.tabTextObjects, {obj = obj, page = page})
-end
-
-local function registerToggle(obj, toggle)
-    table.insert(library.toggleObjects, {obj = obj, toggle = toggle})
-end
-
+--- Creates the watermark display
+--- @param config table Configuration options
+--- @return table The watermark object
 function library:CreateWatermark(config)
     config = config or {}
     local title = config.title or "NexusLib"
+
     local watermark = library.watermark
-    local t = library.theme
-    local a = library.accent
     local initialText = title .. " | 0 fps | 0ms | 00:00:00"
-    local width = textBounds(initialText, 13).X + 20
+    local width = getTextBounds(initialText, 13).X + 20
     local pos = watermark.position
 
-    watermark.objects.outline = create("Square", {Size = Vector2.new(width, 24), Position = pos, Color = t.outline, Filled = true, Visible = false, ZIndex = 100})
+    -- Create watermark elements
+    watermark.objects.outline = createDrawing("Square", {
+        Size = Vector2.new(width, 24),
+        Position = pos,
+        Color = library.theme.outline,
+        Filled = true,
+        Visible = false,
+        ZIndex = 100
+    })
     registerTheme(watermark.objects.outline, "Color", "outline")
-    watermark.objects.bg = create("Square", {Size = Vector2.new(width - 2, 22), Position = pos + Vector2.new(1, 1), Color = t.background, Filled = true, Visible = false, ZIndex = 101})
-    registerTheme(watermark.objects.bg, "Color", "background")
-    watermark.objects.accent = create("Square", {Size = Vector2.new(width - 4, 2), Position = pos + Vector2.new(2, 2), Color = a, Filled = true, Visible = false, ZIndex = 102})
+
+    watermark.objects.background = createDrawing("Square", {
+        Size = Vector2.new(width - 2, 22),
+        Position = pos + Vector2.new(1, 1),
+        Color = library.theme.background,
+        Filled = true,
+        Visible = false,
+        ZIndex = 101
+    })
+    registerTheme(watermark.objects.background, "Color", "background")
+
+    watermark.objects.accent = createDrawing("Square", {
+        Size = Vector2.new(width - 4, 2),
+        Position = pos + Vector2.new(2, 2),
+        Color = library.accent,
+        Filled = true,
+        Visible = false,
+        ZIndex = 102
+    })
     registerAccent(watermark.objects.accent, "Color")
-    watermark.objects.text = create("Text", {Text = initialText, Size = 13, Font = 2, Color = t.text, Outline = true, OutlineColor = Color3.new(0, 0, 0), Position = pos + Vector2.new(8, 6), Visible = false, ZIndex = 103})
+
+    watermark.objects.text = createDrawing("Text", {
+        Text = initialText,
+        Size = 13,
+        Font = 2,
+        Color = library.theme.text,
+        Outline = true,
+        OutlineColor = Color3.new(0, 0, 0),
+        Position = pos + Vector2.new(8, 6),
+        Visible = false,
+        ZIndex = 103
+    })
     registerTheme(watermark.objects.text, "Color", "text")
 
     watermark.title = title
     watermark.width = width
     watermark._initialized = true
-    if watermark.enabled then for _, obj in pairs(watermark.objects) do pcall(function() obj.Visible = true end) end end
 
+    -- Show if already enabled
+    if watermark.enabled then
+        for _, obj in pairs(watermark.objects) do
+            pcall(function() obj.Visible = true end)
+        end
+    end
+
+    -- Update positions helper
     function watermark:UpdatePositions()
         local p = watermark.position
         local w = watermark.width
-        pcall(function() watermark.objects.outline.Position = p; watermark.objects.outline.Size = Vector2.new(w, 24) end)
-        pcall(function() watermark.objects.bg.Position = p + Vector2.new(1, 1); watermark.objects.bg.Size = Vector2.new(w - 2, 22) end)
-        pcall(function() watermark.objects.accent.Position = p + Vector2.new(2, 2); watermark.objects.accent.Size = Vector2.new(w - 4, 2) end)
-        pcall(function() watermark.objects.text.Position = p + Vector2.new(8, 6) end)
+
+        pcall(function()
+            watermark.objects.outline.Position = p
+            watermark.objects.outline.Size = Vector2.new(w, 24)
+        end)
+        pcall(function()
+            watermark.objects.background.Position = p + Vector2.new(1, 1)
+            watermark.objects.background.Size = Vector2.new(w - 2, 22)
+        end)
+        pcall(function()
+            watermark.objects.accent.Position = p + Vector2.new(2, 2)
+            watermark.objects.accent.Size = Vector2.new(w - 4, 2)
+        end)
+        pcall(function()
+            watermark.objects.text.Position = p + Vector2.new(8, 6)
+        end)
     end
 
+    -- FPS/Ping update loop
     local lastUpdate = 0
     local fpsBuffer = {}
-    table.insert(library.connections, RS.RenderStepped:Connect(function(dt)
+
+    table.insert(library.connections, RunService.RenderStepped:Connect(function(deltaTime)
         if not watermark.enabled then return end
-        table.insert(fpsBuffer, 1/dt)
-        if #fpsBuffer > 30 then table.remove(fpsBuffer, 1) end
+
+        -- Collect FPS samples
+        table.insert(fpsBuffer, 1 / deltaTime)
+        if #fpsBuffer > 30 then
+            table.remove(fpsBuffer, 1)
+        end
+
+        -- Update every 0.5 seconds
         if tick() - lastUpdate < 0.5 then return end
         lastUpdate = tick()
+
+        -- Calculate average FPS
         local avgFps = 0
-        for _, v in ipairs(fpsBuffer) do avgFps = avgFps + v end
+        for _, v in ipairs(fpsBuffer) do
+            avgFps = avgFps + v
+        end
         avgFps = math.floor(avgFps / #fpsBuffer)
+
+        -- Get ping
         local ping = 0
-        pcall(function() ping = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue()) end)
+        pcall(function()
+            ping = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue())
+        end)
+
+        -- Get time
         local timeStr = os.date("%H:%M:%S")
+
+        -- Update text
         local newText = watermark.title .. " | " .. avgFps .. " fps | " .. ping .. "ms | " .. timeStr
-        pcall(function() watermark.objects.text.Text = newText; watermark.width = textBounds(newText, 13).X + 20; watermark:UpdatePositions() end)
+        pcall(function()
+            watermark.objects.text.Text = newText
+            watermark.width = getTextBounds(newText, 13).X + 20
+            watermark:UpdatePositions()
+        end)
     end))
 
-    table.insert(library.connections, UIS.InputBegan:Connect(function(input)
+    -- Dragging
+    table.insert(library.connections, UserInputService.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 and watermark.enabled then
             local pos = watermark.position
-            if mouseOver(pos.X, pos.Y, watermark.width, 24) then
+            if isMouseOver(pos.X, pos.Y, watermark.width, 24) then
                 watermark.dragging = true
-                local success, mouse = pcall(function() return UIS:GetMouseLocation() end)
-                if success then watermark.dragOffset = Vector2.new(mouse.X - pos.X, mouse.Y - pos.Y) end
+                local success, mouse = pcall(function()
+                    return UserInputService:GetMouseLocation()
+                end)
+                if success then
+                    watermark.dragOffset = Vector2.new(mouse.X - pos.X, mouse.Y - pos.Y)
+                end
             end
         end
     end))
-    table.insert(library.connections, UIS.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then watermark.dragging = false end
-    end))
-    table.insert(library.connections, RS.RenderStepped:Connect(function()
-        if watermark.dragging then
-            local success, mouse = pcall(function() return UIS:GetMouseLocation() end)
-            if success then watermark.position = Vector2.new(mouse.X - watermark.dragOffset.X, mouse.Y - watermark.dragOffset.Y); watermark:UpdatePositions() end
+
+    table.insert(library.connections, UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            watermark.dragging = false
         end
     end))
+
+    table.insert(library.connections, RunService.RenderStepped:Connect(function()
+        if watermark.dragging then
+            local success, mouse = pcall(function()
+                return UserInputService:GetMouseLocation()
+            end)
+            if success then
+                watermark.position = Vector2.new(
+                    mouse.X - watermark.dragOffset.X,
+                    mouse.Y - watermark.dragOffset.Y
+                )
+                watermark:UpdatePositions()
+            end
+        end
+    end))
+
     return watermark
 end
 
+--============================================================================--
+--                            NOTIFICATIONS                                   --
+--============================================================================--
+
+--- Creates a notification toast
+--- @param config table Configuration options
+--- @return table The notification object
 function library:Notify(config)
     config = config or {}
     local title = config.title or "Notification"
     local message = config.message or ""
     local duration = config.duration or 4
     local notifType = config.type or "info"
-    local t = library.theme
-    local typeColors = {info = library.accent, success = t.success, warning = t.warning, error = t.error}
+
+    -- Type colors
+    local typeColors = {
+        info = library.accent,
+        success = library.theme.success,
+        warning = library.theme.warning,
+        error = library.theme.error
+    }
     local accentColor = typeColors[notifType] or library.accent
-    local notification = {objects = {}, startTime = tick()}
-    local titleWidth = textBounds(title, 13).X
-    local msgWidth = textBounds(message, 13).X
+
+    -- Create notification
+    local notification = {
+        objects = {},
+        startTime = tick()
+    }
+
+    -- Calculate dimensions
+    local titleWidth = getTextBounds(title, 13).X
+    local msgWidth = getTextBounds(message, 13).X
     local width = math.max(math.max(titleWidth, msgWidth) + 30, 220)
     local height = message ~= "" and 52 or 34
+
+    -- Calculate position (stack from bottom-right)
     local screenSize = workspace.CurrentCamera.ViewportSize
     local yOffset = 10
     for _, notif in pairs(library.notifications) do
-        if notif.objects.outline and notif.objects.outline.Visible then yOffset = yOffset + notif.height + 8 end
+        if notif.objects.outline and notif.objects.outline.Visible then
+            yOffset = yOffset + notif.height + 8
+        end
     end
+
     local startX = screenSize.X + width
     local targetX = screenSize.X - width - 10
     local posY = screenSize.Y - height - yOffset
+
     notification.height = height
 
-    notification.objects.outline = create("Square", {Size = Vector2.new(width, height), Position = Vector2.new(startX, posY), Color = t.outline, Filled = true, Visible = true, ZIndex = 200})
-    notification.objects.bg = create("Square", {Size = Vector2.new(width - 2, height - 2), Position = Vector2.new(startX + 1, posY + 1), Color = t.background, Filled = true, Visible = true, ZIndex = 201})
-    notification.objects.accent = create("Square", {Size = Vector2.new(3, height - 6), Position = Vector2.new(startX + 3, posY + 3), Color = accentColor, Filled = true, Visible = true, ZIndex = 202})
-    notification.objects.title = create("Text", {Text = title, Size = 13, Font = 2, Color = t.text, Outline = true, OutlineColor = Color3.new(0, 0, 0), Position = Vector2.new(startX + 14, posY + 8), Visible = true, ZIndex = 203})
-    if message ~= "" then notification.objects.message = create("Text", {Text = message, Size = 13, Font = 2, Color = t.dimtext, Outline = true, OutlineColor = Color3.new(0, 0, 0), Position = Vector2.new(startX + 14, posY + 26), Visible = true, ZIndex = 203}) end
-    notification.objects.progress = create("Square", {Size = Vector2.new(width - 6, 2), Position = Vector2.new(startX + 3, posY + height - 5), Color = accentColor, Filled = true, Visible = true, ZIndex = 202})
+    -- Create notification elements
+    notification.objects.outline = createDrawing("Square", {
+        Size = Vector2.new(width, height),
+        Position = Vector2.new(startX, posY),
+        Color = library.theme.outline,
+        Filled = true,
+        Visible = true,
+        ZIndex = 200
+    })
+
+    notification.objects.background = createDrawing("Square", {
+        Size = Vector2.new(width - 2, height - 2),
+        Position = Vector2.new(startX + 1, posY + 1),
+        Color = library.theme.background,
+        Filled = true,
+        Visible = true,
+        ZIndex = 201
+    })
+
+    notification.objects.accent = createDrawing("Square", {
+        Size = Vector2.new(3, height - 6),
+        Position = Vector2.new(startX + 3, posY + 3),
+        Color = accentColor,
+        Filled = true,
+        Visible = true,
+        ZIndex = 202
+    })
+
+    notification.objects.title = createDrawing("Text", {
+        Text = title,
+        Size = 13,
+        Font = 2,
+        Color = library.theme.text,
+        Outline = true,
+        OutlineColor = Color3.new(0, 0, 0),
+        Position = Vector2.new(startX + 14, posY + 8),
+        Visible = true,
+        ZIndex = 203
+    })
+
+    if message ~= "" then
+        notification.objects.message = createDrawing("Text", {
+            Text = message,
+            Size = 13,
+            Font = 2,
+            Color = library.theme.dimtext,
+            Outline = true,
+            OutlineColor = Color3.new(0, 0, 0),
+            Position = Vector2.new(startX + 14, posY + 26),
+            Visible = true,
+            ZIndex = 203
+        })
+    end
+
+    notification.objects.progress = createDrawing("Square", {
+        Size = Vector2.new(width - 6, 2),
+        Position = Vector2.new(startX + 3, posY + height - 5),
+        Color = accentColor,
+        Filled = true,
+        Visible = true,
+        ZIndex = 202
+    })
+
     table.insert(library.notifications, notification)
 
+    -- Animation
     local currentX = startX
+
     task.spawn(function()
+        -- Slide in
         while currentX > targetX do
             currentX = lerp(currentX, targetX, 0.12)
-            if math.abs(currentX - targetX) < 1 then currentX = targetX end
+            if math.abs(currentX - targetX) < 1 then
+                currentX = targetX
+            end
+
             pcall(function()
                 notification.objects.outline.Position = Vector2.new(currentX, posY)
-                notification.objects.bg.Position = Vector2.new(currentX + 1, posY + 1)
+                notification.objects.background.Position = Vector2.new(currentX + 1, posY + 1)
                 notification.objects.accent.Position = Vector2.new(currentX + 3, posY + 3)
                 notification.objects.title.Position = Vector2.new(currentX + 14, posY + 8)
-                if notification.objects.message then notification.objects.message.Position = Vector2.new(currentX + 14, posY + 26) end
+                if notification.objects.message then
+                    notification.objects.message.Position = Vector2.new(currentX + 14, posY + 26)
+                end
                 notification.objects.progress.Position = Vector2.new(currentX + 3, posY + height - 5)
             end)
+
             task.wait()
         end
+
+        -- Progress bar countdown
         local elapsed = 0
         while elapsed < duration do
             elapsed = tick() - notification.startTime
-            pcall(function() notification.objects.progress.Size = Vector2.new((width - 6) * (1 - elapsed/duration), 2) end)
-            task.wait()
-        end
-        local outTarget = screenSize.X + width
-        while currentX < outTarget do
-            currentX = lerp(currentX, outTarget, 0.12)
-            if math.abs(currentX - outTarget) < 1 then currentX = outTarget end
+            local progress = 1 - (elapsed / duration)
             pcall(function()
-                notification.objects.outline.Position = Vector2.new(currentX, posY)
-                notification.objects.bg.Position = Vector2.new(currentX + 1, posY + 1)
-                notification.objects.accent.Position = Vector2.new(currentX + 3, posY + 3)
-                notification.objects.title.Position = Vector2.new(currentX + 14, posY + 8)
-                if notification.objects.message then notification.objects.message.Position = Vector2.new(currentX + 14, posY + 26) end
-                notification.objects.progress.Position = Vector2.new(currentX + 3, posY + height - 5)
+                notification.objects.progress.Size = Vector2.new((width - 6) * progress, 2)
             end)
             task.wait()
         end
-        for _, obj in pairs(notification.objects) do remove(obj) end
-        for i, n in pairs(library.notifications) do if n == notification then table.remove(library.notifications, i) break end end
+
+        -- Slide out
+        local outTarget = screenSize.X + width
+        while currentX < outTarget do
+            currentX = lerp(currentX, outTarget, 0.12)
+            if math.abs(currentX - outTarget) < 1 then
+                currentX = outTarget
+            end
+
+            pcall(function()
+                notification.objects.outline.Position = Vector2.new(currentX, posY)
+                notification.objects.background.Position = Vector2.new(currentX + 1, posY + 1)
+                notification.objects.accent.Position = Vector2.new(currentX + 3, posY + 3)
+                notification.objects.title.Position = Vector2.new(currentX + 14, posY + 8)
+                if notification.objects.message then
+                    notification.objects.message.Position = Vector2.new(currentX + 14, posY + 26)
+                end
+                notification.objects.progress.Position = Vector2.new(currentX + 3, posY + height - 5)
+            end)
+
+            task.wait()
+        end
+
+        -- Cleanup
+        for _, obj in pairs(notification.objects) do
+            removeDrawing(obj)
+        end
+
+        for i, n in pairs(library.notifications) do
+            if n == notification then
+                table.remove(library.notifications, i)
+                break
+            end
+        end
     end)
+
     return notification
 end
 
+--============================================================================--
+--                            KEYBIND LIST                                    --
+--============================================================================--
+
+--- Creates the keybind list display
+--- @param config table Configuration options
+--- @return table The keybind list object
 function library:CreateKeybindList(config)
     config = config or {}
     local title = config.title or "Active Keybinds"
+
     local list = library.keybindList
-    local t = library.theme
-    local a = library.accent
     local width = 160
 
-    list.objects.outline = create("Square", {Size = Vector2.new(width, 26), Position = list.position, Color = t.outline, Filled = true, Visible = false, ZIndex = 90})
+    -- Create list elements
+    list.objects.outline = createDrawing("Square", {
+        Size = Vector2.new(width, 26),
+        Position = list.position,
+        Color = library.theme.outline,
+        Filled = true,
+        Visible = false,
+        ZIndex = 90
+    })
     registerTheme(list.objects.outline, "Color", "outline")
-    list.objects.bg = create("Square", {Size = Vector2.new(width - 2, 24), Position = list.position + Vector2.new(1, 1), Color = t.background, Filled = true, Visible = false, ZIndex = 91})
-    registerTheme(list.objects.bg, "Color", "background")
-    list.objects.accent = create("Square", {Size = Vector2.new(width - 4, 2), Position = list.position + Vector2.new(2, 2), Color = a, Filled = true, Visible = false, ZIndex = 92})
+
+    list.objects.background = createDrawing("Square", {
+        Size = Vector2.new(width - 2, 24),
+        Position = list.position + Vector2.new(1, 1),
+        Color = library.theme.background,
+        Filled = true,
+        Visible = false,
+        ZIndex = 91
+    })
+    registerTheme(list.objects.background, "Color", "background")
+
+    list.objects.accent = createDrawing("Square", {
+        Size = Vector2.new(width - 4, 2),
+        Position = list.position + Vector2.new(2, 2),
+        Color = library.accent,
+        Filled = true,
+        Visible = false,
+        ZIndex = 92
+    })
     registerAccent(list.objects.accent, "Color")
-    list.objects.title = create("Text", {Text = title, Size = 13, Font = 2, Color = t.text, Outline = true, OutlineColor = Color3.new(0, 0, 0), Position = list.position + Vector2.new(8, 7), Visible = false, ZIndex = 93})
+
+    list.objects.title = createDrawing("Text", {
+        Text = title,
+        Size = 13,
+        Font = 2,
+        Color = library.theme.text,
+        Outline = true,
+        OutlineColor = Color3.new(0, 0, 0),
+        Position = list.position + Vector2.new(8, 7),
+        Visible = false,
+        ZIndex = 93
+    })
     registerTheme(list.objects.title, "Color", "text")
 
     list.width = width
     list._initialized = true
-    if list.enabled then for _, obj in pairs(list.objects) do pcall(function() obj.Visible = true end) end end
 
+    -- Show if already enabled
+    if list.enabled then
+        for _, obj in pairs(list.objects) do
+            pcall(function() obj.Visible = true end)
+        end
+    end
+
+    -- Update positions helper
     function list:UpdatePositions()
         local p = list.position
-        pcall(function() list.objects.outline.Position = p; list.objects.bg.Position = p + Vector2.new(1, 1); list.objects.accent.Position = p + Vector2.new(2, 2); list.objects.title.Position = p + Vector2.new(8, 7) end)
+
+        pcall(function()
+            list.objects.outline.Position = p
+            list.objects.background.Position = p + Vector2.new(1, 1)
+            list.objects.accent.Position = p + Vector2.new(2, 2)
+            list.objects.title.Position = p + Vector2.new(8, 7)
+        end)
+
         list:UpdateHeight()
     end
 
+    -- Add keybind item
     function list:AddKeybind(name, key)
-        local item = {name = name, key = key, active = false, objects = {}}
+        local item = {
+            name = name,
+            key = key,
+            active = false,
+            objects = {}
+        }
+
         local yOffset = 26 + (#list.items * 20)
-        item.objects.bg = create("Square", {Size = Vector2.new(width - 2, 20), Position = list.position + Vector2.new(1, yOffset), Color = t.elementbg, Filled = true, Visible = false, ZIndex = 91})
-        item.objects.name = create("Text", {Text = name, Size = 13, Font = 2, Color = t.dimtext, Outline = true, OutlineColor = Color3.new(0, 0, 0), Position = list.position + Vector2.new(8, yOffset + 3), Visible = false, ZIndex = 93})
+
+        item.objects.background = createDrawing("Square", {
+            Size = Vector2.new(width - 2, 20),
+            Position = list.position + Vector2.new(1, yOffset),
+            Color = library.theme.elementbg,
+            Filled = true,
+            Visible = false,
+            ZIndex = 91
+        })
+
+        item.objects.name = createDrawing("Text", {
+            Text = name,
+            Size = 13,
+            Font = 2,
+            Color = library.theme.dimtext,
+            Outline = true,
+            OutlineColor = Color3.new(0, 0, 0),
+            Position = list.position + Vector2.new(8, yOffset + 3),
+            Visible = false,
+            ZIndex = 93
+        })
+
         local keyText = "[" .. key .. "]"
-        item.objects.key = create("Text", {Text = keyText, Size = 13, Font = 2, Color = a, Outline = true, OutlineColor = Color3.new(0, 0, 0), Position = list.position + Vector2.new(width - 10 - textBounds(keyText, 13).X, yOffset + 3), Visible = false, ZIndex = 93})
+        item.objects.key = createDrawing("Text", {
+            Text = keyText,
+            Size = 13,
+            Font = 2,
+            Color = library.accent,
+            Outline = true,
+            OutlineColor = Color3.new(0, 0, 0),
+            Position = list.position + Vector2.new(width - 10 - getTextBounds(keyText, 13).X, yOffset + 3),
+            Visible = false,
+            ZIndex = 93
+        })
         registerAccent(item.objects.key, "Color")
+
         function item:SetActive(state)
             item.active = state
-            for _, obj in pairs(item.objects) do pcall(function() obj.Visible = list.enabled and state end) end
+            for _, obj in pairs(item.objects) do
+                pcall(function()
+                    obj.Visible = list.enabled and state
+                end)
+            end
             list:UpdateHeight()
         end
+
         table.insert(list.items, item)
         return item
     end
 
+    -- Update list height based on active items
     function list:UpdateHeight()
         local activeCount = 0
-        for _, item in pairs(list.items) do if item.active then activeCount = activeCount + 1 end end
+        for _, item in pairs(list.items) do
+            if item.active then
+                activeCount = activeCount + 1
+            end
+        end
+
         local totalHeight = 26 + (activeCount * 20)
-        pcall(function() list.objects.outline.Size = Vector2.new(width, totalHeight); list.objects.bg.Size = Vector2.new(width - 2, totalHeight - 2) end)
+
+        pcall(function()
+            list.objects.outline.Size = Vector2.new(width, totalHeight)
+            list.objects.background.Size = Vector2.new(width - 2, totalHeight - 2)
+        end)
+
+        -- Reposition active items
         local yOffset = 26
         for _, item in pairs(list.items) do
             if item.active then
                 pcall(function()
-                    item.objects.bg.Position = list.position + Vector2.new(1, yOffset)
+                    item.objects.background.Position = list.position + Vector2.new(1, yOffset)
                     item.objects.name.Position = list.position + Vector2.new(8, yOffset + 3)
                     local keyText = "[" .. item.key .. "]"
-                    item.objects.key.Position = list.position + Vector2.new(width - 10 - textBounds(keyText, 13).X, yOffset + 3)
+                    item.objects.key.Position = list.position + Vector2.new(
+                        width - 10 - getTextBounds(keyText, 13).X,
+                        yOffset + 3
+                    )
                 end)
                 yOffset = yOffset + 20
             end
         end
     end
 
-    table.insert(library.connections, UIS.InputBegan:Connect(function(input)
+    -- Dragging
+    table.insert(library.connections, UserInputService.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 and list.enabled then
             local pos = list.position
-            if mouseOver(pos.X, pos.Y, width, 26) then
+            if isMouseOver(pos.X, pos.Y, width, 26) then
                 list.dragging = true
-                local success, mouse = pcall(function() return UIS:GetMouseLocation() end)
-                if success then list.dragOffset = Vector2.new(mouse.X - pos.X, mouse.Y - pos.Y) end
+                local success, mouse = pcall(function()
+                    return UserInputService:GetMouseLocation()
+                end)
+                if success then
+                    list.dragOffset = Vector2.new(mouse.X - pos.X, mouse.Y - pos.Y)
+                end
             end
         end
     end))
-    table.insert(library.connections, UIS.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then list.dragging = false end
-    end))
-    table.insert(library.connections, RS.RenderStepped:Connect(function()
-        if list.dragging then
-            local success, mouse = pcall(function() return UIS:GetMouseLocation() end)
-            if success then list.position = Vector2.new(mouse.X - list.dragOffset.X, mouse.Y - list.dragOffset.Y); list:UpdatePositions() end
+
+    table.insert(library.connections, UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            list.dragging = false
         end
     end))
+
+    table.insert(library.connections, RunService.RenderStepped:Connect(function()
+        if list.dragging then
+            local success, mouse = pcall(function()
+                return UserInputService:GetMouseLocation()
+            end)
+            if success then
+                list.position = Vector2.new(
+                    mouse.X - list.dragOffset.X,
+                    mouse.Y - list.dragOffset.Y
+                )
+                list:UpdatePositions()
+            end
+        end
+    end))
+
     return list
 end
 
+--============================================================================--
+--                           CONFIG SYSTEM                                    --
+--============================================================================--
+
+--- Saves the current configuration to a file
+--- @param name string The config name
+--- @param folder string The folder to save to (optional)
 function library:SaveConfig(name, folder)
     folder = folder or "NexusLib"
-    pcall(function() if not isfolder(folder) then makefolder(folder) end end)
+
+    -- Ensure folder exists
+    pcall(function()
+        if not isfolder(folder) then
+            makefolder(folder)
+        end
+    end)
+
+    -- Serialize flags
     local data = {}
     for flag, value in pairs(library.flags) do
-        if typeof(value) == "Color3" then data[flag] = {type = "Color3", R = value.R, G = value.G, B = value.B}
-        elseif typeof(value) == "EnumItem" then data[flag] = {type = "Enum", value = tostring(value)}
-        else data[flag] = value end
+        if typeof(value) == "Color3" then
+            data[flag] = {
+                type = "Color3",
+                R = value.R,
+                G = value.G,
+                B = value.B
+            }
+        elseif typeof(value) == "EnumItem" then
+            data[flag] = {
+                type = "Enum",
+                value = tostring(value)
+            }
+        else
+            data[flag] = value
+        end
     end
-    pcall(function() writefile(folder .. "/" .. name .. ".json", HttpService:JSONEncode(data)) end)
-    library:Notify({title = "Config Saved", message = name, type = "success", duration = 3})
+
+    -- Write file
+    pcall(function()
+        writefile(folder .. "/" .. name .. ".json", HttpService:JSONEncode(data))
+    end)
+
+    library:Notify({
+        title = "Config Saved",
+        message = name,
+        type = "success",
+        duration = 3
+    })
 end
 
+--- Loads a configuration from a file
+--- @param name string The config name
+--- @param folder string The folder to load from (optional)
 function library:LoadConfig(name, folder)
     folder = folder or "NexusLib"
-    local success, data = pcall(function() return HttpService:JSONDecode(readfile(folder .. "/" .. name .. ".json")) end)
-    if not success then library:Notify({title = "Config Error", message = "Failed to load: " .. name, type = "error", duration = 3}) return end
-    for flag, value in pairs(data) do
-        if typeof(value) == "table" and value.type == "Color3" then library.flags[flag] = Color3.new(value.R, value.G, value.B)
-        else library.flags[flag] = value end
-        if library.pointers[flag] and library.pointers[flag].Set then pcall(function() library.pointers[flag]:Set(library.flags[flag]) end) end
+
+    local success, data = pcall(function()
+        return HttpService:JSONDecode(readfile(folder .. "/" .. name .. ".json"))
+    end)
+
+    if not success then
+        library:Notify({
+            title = "Config Error",
+            message = "Failed to load: " .. name,
+            type = "error",
+            duration = 3
+        })
+        return
     end
-    library:Notify({title = "Config Loaded", message = name, type = "success", duration = 3})
+
+    -- Deserialize and apply flags
+    for flag, value in pairs(data) do
+        if typeof(value) == "table" and value.type == "Color3" then
+            library.flags[flag] = Color3.new(value.R, value.G, value.B)
+        else
+            library.flags[flag] = value
+        end
+
+        -- Update element if it exists
+        if library.pointers[flag] and library.pointers[flag].Set then
+            pcall(function()
+                library.pointers[flag]:Set(library.flags[flag])
+            end)
+        end
+    end
+
+    library:Notify({
+        title = "Config Loaded",
+        message = name,
+        type = "success",
+        duration = 3
+    })
 end
 
+--============================================================================--
+--                           MAIN WINDOW                                      --
+--============================================================================--
+
+--- Creates a new window
+--- @param config table Configuration options
+--- @return table The window object
 function library:New(config)
     config = config or {}
-    local name = config.name or "NexusLib"
+    local windowName = config.name or "NexusLib"
     local sizeX = config.sizeX or 580
     local sizeY = config.sizeY or 460
-    if config.accent then library.accent = config.accent end
 
+    if config.accent then
+        library.accent = config.accent
+    end
+
+    -- Window state
     local window = {
-        pos = Vector2.new(100, 50), size = Vector2.new(sizeX, sizeY),
-        dragging = false, dragOffset = Vector2.new(0, 0),
-        pages = {}, currentPage = nil, objects = {},
-        activeDropdown = nil, activeColorPicker = nil
+        pos = Vector2.new(100, 50),
+        size = Vector2.new(sizeX, sizeY),
+        dragging = false,
+        dragOffset = Vector2.new(0, 0),
+        pages = {},
+        currentPage = nil,
+        objects = {},
+        activeDropdown = nil,
+        activeColorPicker = nil
     }
 
-    local t = library.theme
-    local a = library.accent
+    --========================================================================--
+    --                         WINDOW ELEMENTS                                --
+    --========================================================================--
 
-    window.objects.outerGlow = create("Square", {Size = Vector2.new(sizeX + 2, sizeY + 2), Position = window.pos - Vector2.new(1, 1), Color = a, Transparency = 0.1, Filled = true, ZIndex = 0, Visible = true})
+    -- Outer glow
+    window.objects.outerGlow = createDrawing("Square", {
+        Size = Vector2.new(sizeX + 2, sizeY + 2),
+        Position = window.pos - Vector2.new(1, 1),
+        Color = library.accent,
+        Transparency = 0.1,
+        Filled = true,
+        ZIndex = 0,
+        Visible = true
+    })
     registerAccent(window.objects.outerGlow, "Color")
-    window.objects.outline = create("Square", {Size = window.size, Position = window.pos, Color = t.outline, Filled = true, ZIndex = 1, Visible = true})
+
+    -- Main outline
+    window.objects.outline = createDrawing("Square", {
+        Size = window.size,
+        Position = window.pos,
+        Color = library.theme.outline,
+        Filled = true,
+        ZIndex = 1,
+        Visible = true
+    })
     registerTheme(window.objects.outline, "Color", "outline")
-    window.objects.bg = create("Square", {Size = Vector2.new(sizeX - 2, sizeY - 2), Position = window.pos + Vector2.new(1, 1), Color = t.background, Filled = true, ZIndex = 2, Visible = true})
-    registerTheme(window.objects.bg, "Color", "background")
-    window.objects.topbar = create("Square", {Size = Vector2.new(sizeX - 4, 24), Position = window.pos + Vector2.new(2, 2), Color = t.topbar, Filled = true, ZIndex = 3, Visible = true})
+
+    -- Background
+    window.objects.background = createDrawing("Square", {
+        Size = Vector2.new(sizeX - 2, sizeY - 2),
+        Position = window.pos + Vector2.new(1, 1),
+        Color = library.theme.background,
+        Filled = true,
+        ZIndex = 2,
+        Visible = true
+    })
+    registerTheme(window.objects.background, "Color", "background")
+
+    -- Top bar
+    window.objects.topbar = createDrawing("Square", {
+        Size = Vector2.new(sizeX - 4, 24),
+        Position = window.pos + Vector2.new(2, 2),
+        Color = library.theme.topbar,
+        Filled = true,
+        ZIndex = 3,
+        Visible = true
+    })
     registerTheme(window.objects.topbar, "Color", "topbar")
-    window.objects.accentLine = create("Square", {Size = Vector2.new(sizeX - 4, 2), Position = window.pos + Vector2.new(2, 26), Color = a, Filled = true, ZIndex = 4, Visible = true})
+
+    -- Accent line
+    window.objects.accentLine = createDrawing("Square", {
+        Size = Vector2.new(sizeX - 4, 2),
+        Position = window.pos + Vector2.new(2, 26),
+        Color = library.accent,
+        Filled = true,
+        ZIndex = 4,
+        Visible = true
+    })
     registerAccent(window.objects.accentLine, "Color")
-    window.objects.title = create("Text", {Text = name, Size = 14, Font = 2, Color = a, Outline = true, OutlineColor = Color3.new(0, 0, 0), Position = window.pos + Vector2.new(10, 6), Visible = true, ZIndex = 5})
+
+    -- Title
+    window.objects.title = createDrawing("Text", {
+        Text = windowName,
+        Size = 14,
+        Font = 2,
+        Color = library.accent,
+        Outline = true,
+        OutlineColor = Color3.new(0, 0, 0),
+        Position = window.pos + Vector2.new(10, 6),
+        Visible = true,
+        ZIndex = 5
+    })
     registerAccent(window.objects.title, "Color")
-    window.objects.contentOutline = create("Square", {Size = Vector2.new(sizeX - 4, sizeY - 54), Position = window.pos + Vector2.new(2, 28), Color = t.outline, Filled = true, ZIndex = 3, Visible = true})
+
+    -- Content area outline
+    window.objects.contentOutline = createDrawing("Square", {
+        Size = Vector2.new(sizeX - 4, sizeY - 54),
+        Position = window.pos + Vector2.new(2, 28),
+        Color = library.theme.outline,
+        Filled = true,
+        ZIndex = 3,
+        Visible = true
+    })
     registerTheme(window.objects.contentOutline, "Color", "outline")
-    window.objects.content = create("Square", {Size = Vector2.new(sizeX - 6, sizeY - 56), Position = window.pos + Vector2.new(3, 29), Color = t.section, Filled = true, ZIndex = 4, Visible = true})
+
+    -- Content area
+    window.objects.content = createDrawing("Square", {
+        Size = Vector2.new(sizeX - 6, sizeY - 56),
+        Position = window.pos + Vector2.new(3, 29),
+        Color = library.theme.section,
+        Filled = true,
+        ZIndex = 4,
+        Visible = true
+    })
     registerTheme(window.objects.content, "Color", "section")
-    window.objects.sidebarOutline = create("Square", {Size = Vector2.new(118, sizeY - 58), Position = window.pos + Vector2.new(4, 30), Color = t.outline, Filled = true, ZIndex = 5, Visible = true})
+
+    -- Sidebar outline
+    window.objects.sidebarOutline = createDrawing("Square", {
+        Size = Vector2.new(118, sizeY - 58),
+        Position = window.pos + Vector2.new(4, 30),
+        Color = library.theme.outline,
+        Filled = true,
+        ZIndex = 5,
+        Visible = true
+    })
     registerTheme(window.objects.sidebarOutline, "Color", "outline")
-    window.objects.sidebar = create("Square", {Size = Vector2.new(116, sizeY - 60), Position = window.pos + Vector2.new(5, 31), Color = t.sidebar, Filled = true, ZIndex = 6, Visible = true})
+
+    -- Sidebar
+    window.objects.sidebar = createDrawing("Square", {
+        Size = Vector2.new(116, sizeY - 60),
+        Position = window.pos + Vector2.new(5, 31),
+        Color = library.theme.sidebar,
+        Filled = true,
+        ZIndex = 6,
+        Visible = true
+    })
     registerTheme(window.objects.sidebar, "Color", "sidebar")
-    window.objects.bottomOutline = create("Square", {Size = Vector2.new(sizeX - 4, 24), Position = window.pos + Vector2.new(2, sizeY - 26), Color = t.outline, Filled = true, ZIndex = 3, Visible = true})
+
+    -- Bottom bar outline
+    window.objects.bottomOutline = createDrawing("Square", {
+        Size = Vector2.new(sizeX - 4, 24),
+        Position = window.pos + Vector2.new(2, sizeY - 26),
+        Color = library.theme.outline,
+        Filled = true,
+        ZIndex = 3,
+        Visible = true
+    })
     registerTheme(window.objects.bottomOutline, "Color", "outline")
-    window.objects.bottombar = create("Square", {Size = Vector2.new(sizeX - 6, 22), Position = window.pos + Vector2.new(3, sizeY - 25), Color = t.topbar, Filled = true, ZIndex = 4, Visible = true})
+
+    -- Bottom bar
+    window.objects.bottombar = createDrawing("Square", {
+        Size = Vector2.new(sizeX - 6, 22),
+        Position = window.pos + Vector2.new(3, sizeY - 25),
+        Color = library.theme.topbar,
+        Filled = true,
+        ZIndex = 4,
+        Visible = true
+    })
     registerTheme(window.objects.bottombar, "Color", "topbar")
-    window.objects.version = create("Text", {Text = "v4.3.4", Size = 13, Font = 2, Color = t.dimtext, Outline = true, OutlineColor = Color3.new(0, 0, 0), Position = window.pos + Vector2.new(10, sizeY - 21), Visible = true, ZIndex = 5})
+
+    -- Version text
+    window.objects.version = createDrawing("Text", {
+        Text = "v4.3.4",
+        Size = 13,
+        Font = 2,
+        Color = library.theme.dimtext,
+        Outline = true,
+        OutlineColor = Color3.new(0, 0, 0),
+        Position = window.pos + Vector2.new(10, sizeY - 21),
+        Visible = true,
+        ZIndex = 5
+    })
     registerTheme(window.objects.version, "Color", "dimtext")
-    window.objects.fpsText = create("Text", {Text = "0 fps", Size = 13, Font = 2, Color = t.dimtext, Outline = true, OutlineColor = Color3.new(0, 0, 0), Position = window.pos + Vector2.new(sizeX - 55, sizeY - 21), Visible = true, ZIndex = 5})
+
+    -- FPS text
+    window.objects.fpsText = createDrawing("Text", {
+        Text = "0 fps",
+        Size = 13,
+        Font = 2,
+        Color = library.theme.dimtext,
+        Outline = true,
+        OutlineColor = Color3.new(0, 0, 0),
+        Position = window.pos + Vector2.new(sizeX - 55, sizeY - 21),
+        Visible = true,
+        ZIndex = 5
+    })
     registerTheme(window.objects.fpsText, "Color", "dimtext")
-    window.objects.toggleHint = create("Text", {Text = "[" .. getKeyName(library.menuKeybind) .. "] to toggle", Size = 13, Font = 2, Color = t.dimtext, Outline = true, OutlineColor = Color3.new(0, 0, 0), Position = window.pos + Vector2.new(sizeX / 2 - 50, sizeY - 21), Visible = true, ZIndex = 5})
+
+    -- Toggle hint
+    window.objects.toggleHint = createDrawing("Text", {
+        Text = "[" .. getKeyName(library.menuKeybind) .. "] to toggle",
+        Size = 13,
+        Font = 2,
+        Color = library.theme.dimtext,
+        Outline = true,
+        OutlineColor = Color3.new(0, 0, 0),
+        Position = window.pos + Vector2.new(sizeX / 2 - 50, sizeY - 21),
+        Visible = true,
+        ZIndex = 5
+    })
     registerTheme(window.objects.toggleHint, "Color", "dimtext")
 
+    --========================================================================--
+    --                        FPS COUNTER                                     --
+    --========================================================================--
+
     local fpsBuffer = {}
-    table.insert(library.connections, RS.RenderStepped:Connect(function(dt)
+
+    table.insert(library.connections, RunService.RenderStepped:Connect(function(deltaTime)
         if not library.open then return end
-        table.insert(fpsBuffer, 1/dt)
-        if #fpsBuffer > 20 then table.remove(fpsBuffer, 1) end
+
+        table.insert(fpsBuffer, 1 / deltaTime)
+        if #fpsBuffer > 20 then
+            table.remove(fpsBuffer, 1)
+        end
+
         local avg = 0
-        for _, v in ipairs(fpsBuffer) do avg = avg + v end
-        pcall(function() window.objects.fpsText.Text = math.floor(avg / #fpsBuffer) .. " fps" end)
+        for _, v in ipairs(fpsBuffer) do
+            avg = avg + v
+        end
+
+        pcall(function()
+            window.objects.fpsText.Text = math.floor(avg / #fpsBuffer) .. " fps"
+        end)
     end))
 
-    function window:UpdateToggleHint() pcall(function() window.objects.toggleHint.Text = "[" .. getKeyName(library.menuKeybind) .. "] to toggle" end) end
+    --========================================================================--
+    --                      WINDOW METHODS                                    --
+    --========================================================================--
 
+    --- Updates the toggle hint text
+    function window:UpdateToggleHint()
+        pcall(function()
+            window.objects.toggleHint.Text = "[" .. getKeyName(library.menuKeybind) .. "] to toggle"
+        end)
+    end
+
+    --- Updates all window element positions
     function window:UpdatePositions()
         local p = window.pos
+
         pcall(function() window.objects.outerGlow.Position = p - Vector2.new(1, 1) end)
         pcall(function() window.objects.outline.Position = p end)
-        pcall(function() window.objects.bg.Position = p + Vector2.new(1, 1) end)
+        pcall(function() window.objects.background.Position = p + Vector2.new(1, 1) end)
         pcall(function() window.objects.topbar.Position = p + Vector2.new(2, 2) end)
         pcall(function() window.objects.accentLine.Position = p + Vector2.new(2, 26) end)
         pcall(function() window.objects.title.Position = p + Vector2.new(10, 6) end)
@@ -624,167 +1477,492 @@ function library:New(config)
         pcall(function() window.objects.version.Position = p + Vector2.new(10, sizeY - 21) end)
         pcall(function() window.objects.fpsText.Position = p + Vector2.new(sizeX - 55, sizeY - 21) end)
         pcall(function() window.objects.toggleHint.Position = p + Vector2.new(sizeX / 2 - 50, sizeY - 21) end)
-        for _, page in pairs(window.pages) do if page.UpdatePositions then page:UpdatePositions() end end
+
+        -- Update all pages
+        for _, page in pairs(window.pages) do
+            if page.UpdatePositions then
+                page:UpdatePositions()
+            end
+        end
     end
 
+    --- Sets the window visibility
+    --- @param state boolean The visibility state
     function window:SetVisible(state)
         library.open = state
-        for _, obj in pairs(window.objects) do pcall(function() obj.Visible = state end) end
+
+        -- Update window objects
+        for _, obj in pairs(window.objects) do
+            pcall(function() obj.Visible = state end)
+        end
+
+        -- Update pages
         for _, page in pairs(window.pages) do
             pcall(function() page.objects.tabText.Visible = state end)
-            if page.SetVisible then page:SetVisible(state and page == window.currentPage) end
+            if page.SetVisible then
+                page:SetVisible(state and page == window.currentPage)
+            end
         end
+
+        -- Close popups when hiding
         if not state then
-            if window.activeDropdown then window.activeDropdown:Close() end
-            if window.activeColorPicker then window.activeColorPicker:Close() end
+            if window.activeDropdown then
+                window.activeDropdown:Close()
+            end
+            if window.activeColorPicker then
+                window.activeColorPicker:Close()
+            end
         end
     end
 
-    function window:Toggle() window:SetVisible(not library.open) end
+    --- Toggles the window visibility
+    function window:Toggle()
+        window:SetVisible(not library.open)
+    end
+
+    --- Closes any open popups
     function window:ClosePopups()
-        if window.activeDropdown then window.activeDropdown:Close() window.activeDropdown = nil end
-        if window.activeColorPicker then window.activeColorPicker:Close() window.activeColorPicker = nil end
+        if window.activeDropdown then
+            window.activeDropdown:Close()
+            window.activeDropdown = nil
+        end
+        if window.activeColorPicker then
+            window.activeColorPicker:Close()
+            window.activeColorPicker = nil
+        end
         library.blockingInput = false
     end
 
+    --========================================================================--
+    --                              PAGE                                      --
+    --========================================================================--
+
+    --- Creates a new page/tab
+    --- @param config table Configuration options
+    --- @return table The page object
     function window:Page(config)
         config = config or {}
         local pageName = config.name or "Page"
-        local page = {name = pageName, visible = false, sections = {}, sectionButtons = {}, currentSection = nil, objects = {}, window = window}
-        local tabWidth = textBounds(pageName, 13).X + 14
 
-        page.objects.tabBg = create("Square", {Size = Vector2.new(tabWidth, 21), Position = window.pos + Vector2.new(0, 4), Color = t.section, Filled = true, Visible = false, ZIndex = 4})
+        local page = {
+            name = pageName,
+            visible = false,
+            sections = {},
+            sectionButtons = {},
+            currentSection = nil,
+            objects = {},
+            window = window
+        }
+
+        local tabWidth = getTextBounds(pageName, 13).X + 14
+
+        -- Tab background
+        page.objects.tabBg = createDrawing("Square", {
+            Size = Vector2.new(tabWidth, 21),
+            Position = window.pos + Vector2.new(0, 4),
+            Color = library.theme.section,
+            Filled = true,
+            Visible = false,
+            ZIndex = 4
+        })
         registerTheme(page.objects.tabBg, "Color", "section")
-        page.objects.tabAccent = create("Square", {Size = Vector2.new(tabWidth - 4, 2), Position = window.pos + Vector2.new(2, 5), Color = a, Filled = true, Visible = false, ZIndex = 5})
+
+        -- Tab accent line
+        page.objects.tabAccent = createDrawing("Square", {
+            Size = Vector2.new(tabWidth - 4, 2),
+            Position = window.pos + Vector2.new(2, 5),
+            Color = library.accent,
+            Filled = true,
+            Visible = false,
+            ZIndex = 5
+        })
         registerAccent(page.objects.tabAccent, "Color")
-        page.objects.tabText = create("Text", {Text = pageName, Size = 13, Font = 2, Color = t.dimtext, Outline = true, OutlineColor = Color3.new(0, 0, 0), Position = window.pos + Vector2.new(7, 8), Visible = library.open, ZIndex = 6})
+
+        -- Tab text
+        page.objects.tabText = createDrawing("Text", {
+            Text = pageName,
+            Size = 13,
+            Font = 2,
+            Color = library.theme.dimtext,
+            Outline = true,
+            OutlineColor = Color3.new(0, 0, 0),
+            Position = window.pos + Vector2.new(7, 8),
+            Visible = library.open,
+            ZIndex = 6
+        })
         registerTabText(page.objects.tabText, page)
 
         page.tabWidth = tabWidth
         page.tabX = 0
 
+        --- Updates all page element positions
         function page:UpdatePositions()
             local p = window.pos
+
             pcall(function() page.objects.tabBg.Position = p + Vector2.new(page.tabX, 4) end)
             pcall(function() page.objects.tabAccent.Position = p + Vector2.new(page.tabX + 2, 5) end)
             pcall(function() page.objects.tabText.Position = p + Vector2.new(page.tabX + 7, 8) end)
-            for _, btn in pairs(page.sectionButtons) do if btn.UpdatePositions then btn:UpdatePositions() end end
-            for _, section in pairs(page.sections) do if section.UpdatePositions then section:UpdatePositions() end end
+
+            for _, btn in pairs(page.sectionButtons) do
+                if btn.UpdatePositions then
+                    btn:UpdatePositions()
+                end
+            end
+
+            for _, section in pairs(page.sections) do
+                if section.UpdatePositions then
+                    section:UpdatePositions()
+                end
+            end
         end
 
+        --- Sets the page visibility
+        --- @param state boolean The visibility state
         function page:SetVisible(state)
             page.visible = state
+
             pcall(function() page.objects.tabBg.Visible = state end)
             pcall(function() page.objects.tabAccent.Visible = state end)
             pcall(function() page.objects.tabText.Visible = library.open end)
-            pcall(function() page.objects.tabText.Color = state and library.accent or library.theme.dimtext end)
-            for _, btn in pairs(page.sectionButtons) do if btn.SetVisible then btn:SetVisible(state) end end
-            for _, section in pairs(page.sections) do if section.SetVisible then section:SetVisible(state and section == page.currentSection) end end
+            pcall(function()
+                page.objects.tabText.Color = state and library.accent or library.theme.dimtext
+            end)
+
+            for _, btn in pairs(page.sectionButtons) do
+                if btn.SetVisible then
+                    btn:SetVisible(state)
+                end
+            end
+
+            for _, section in pairs(page.sections) do
+                if section.SetVisible then
+                    section:SetVisible(state and section == page.currentSection)
+                end
+            end
         end
 
+        --- Shows this page
         function page:Show()
             window:ClosePopups()
-            for _, p in pairs(window.pages) do if p.SetVisible then p:SetVisible(false) end end
+
+            -- Hide all pages
+            for _, p in pairs(window.pages) do
+                if p.SetVisible then
+                    p:SetVisible(false)
+                end
+            end
+
+            -- Show this page
             page:SetVisible(true)
             window.currentPage = page
-            if page.currentSection then page.currentSection:SetVisible(true)
-            elseif page.sections[1] then page.sections[1]:Show() end
+
+            -- Show current or first section
+            if page.currentSection then
+                page.currentSection:SetVisible(true)
+            elseif page.sections[1] then
+                page.sections[1]:Show()
+            end
         end
 
+        --====================================================================--
+        --                           SECTION                                  --
+        --====================================================================--
+
+        --- Creates a new section
+        --- @param config table Configuration options
+        --- @return table The section object
         function page:Section(config)
             config = config or {}
             local sectionName = config.name or "Section"
             local leftTitle = config.left or "general"
             local rightTitle = config.right or "general"
-            local section = {name = sectionName, leftTitle = leftTitle, rightTitle = rightTitle, visible = false, leftElements = {}, rightElements = {}, leftOffset = 28, rightOffset = 28, objects = {}, page = page, window = window}
 
+            local section = {
+                name = sectionName,
+                leftTitle = leftTitle,
+                rightTitle = rightTitle,
+                visible = false,
+                leftElements = {},
+                rightElements = {},
+                leftOffset = 28,
+                rightOffset = 28,
+                objects = {},
+                page = page,
+                window = window
+            }
+
+            -- Section button in sidebar
             local btnY = 10 + (#page.sections * 24)
-            local sectionBtn = {yOffset = btnY, objects = {}}
-            sectionBtn.objects.accent = create("Square", {Size = Vector2.new(2, 18), Position = window.pos + Vector2.new(7, 32 + btnY), Color = a, Filled = true, Visible = false, ZIndex = 7})
+
+            local sectionBtn = {
+                yOffset = btnY,
+                objects = {}
+            }
+
+            -- Button accent indicator
+            sectionBtn.objects.accent = createDrawing("Square", {
+                Size = Vector2.new(2, 18),
+                Position = window.pos + Vector2.new(7, 32 + btnY),
+                Color = library.accent,
+                Filled = true,
+                Visible = false,
+                ZIndex = 7
+            })
             registerAccent(sectionBtn.objects.accent, "Color")
-            sectionBtn.objects.text = create("Text", {Text = sectionName, Size = 13, Font = 2, Color = t.dimtext, Outline = true, OutlineColor = Color3.new(0, 0, 0), Position = window.pos + Vector2.new(16, 34 + btnY), Visible = page.visible, ZIndex = 7})
+
+            -- Button text
+            sectionBtn.objects.text = createDrawing("Text", {
+                Text = sectionName,
+                Size = 13,
+                Font = 2,
+                Color = library.theme.dimtext,
+                Outline = true,
+                OutlineColor = Color3.new(0, 0, 0),
+                Position = window.pos + Vector2.new(16, 34 + btnY),
+                Visible = page.visible,
+                ZIndex = 7
+            })
 
             function sectionBtn:UpdatePositions()
                 local p = window.pos
-                pcall(function() sectionBtn.objects.accent.Position = p + Vector2.new(7, 32 + sectionBtn.yOffset) end)
-                pcall(function() sectionBtn.objects.text.Position = p + Vector2.new(16, 34 + sectionBtn.yOffset) end)
+                pcall(function()
+                    sectionBtn.objects.accent.Position = p + Vector2.new(7, 32 + sectionBtn.yOffset)
+                end)
+                pcall(function()
+                    sectionBtn.objects.text.Position = p + Vector2.new(16, 34 + sectionBtn.yOffset)
+                end)
             end
+
             function sectionBtn:SetVisible(state)
-                pcall(function() sectionBtn.objects.accent.Visible = state and section == page.currentSection end)
-                pcall(function() sectionBtn.objects.text.Visible = state end)
-                pcall(function() sectionBtn.objects.text.Color = (section == page.currentSection) and Color3.new(1, 1, 1) or library.theme.dimtext end)
+                pcall(function()
+                    sectionBtn.objects.accent.Visible = state and section == page.currentSection
+                end)
+                pcall(function()
+                    sectionBtn.objects.text.Visible = state
+                end)
+                pcall(function()
+                    sectionBtn.objects.text.Color = (section == page.currentSection)
+                        and Color3.new(1, 1, 1)
+                        or library.theme.dimtext
+                end)
             end
 
             table.insert(page.sectionButtons, sectionBtn)
             section.button = sectionBtn
 
+            -- Content area dimensions
             local contentX = 126
             local contentWidth = (sizeX - 136) / 2 - 6
             local contentY = 32
             local rightX = contentX + contentWidth + 8
             local contentHeight = sizeY - 90
 
-            section.objects.leftOutline = create("Square", {Size = Vector2.new(contentWidth + 2, contentHeight), Position = window.pos + Vector2.new(contentX, contentY), Color = t.outline, Filled = true, Visible = false, ZIndex = 5})
+            --================================================================--
+            --                    LEFT COLUMN                                 --
+            --================================================================--
+
+            section.objects.leftOutline = createDrawing("Square", {
+                Size = Vector2.new(contentWidth + 2, contentHeight),
+                Position = window.pos + Vector2.new(contentX, contentY),
+                Color = library.theme.outline,
+                Filled = true,
+                Visible = false,
+                ZIndex = 5
+            })
             registerTheme(section.objects.leftOutline, "Color", "outline")
-            section.objects.left = create("Square", {Size = Vector2.new(contentWidth, contentHeight - 2), Position = window.pos + Vector2.new(contentX + 1, contentY + 1), Color = t.sidebar, Filled = true, Visible = false, ZIndex = 6})
+
+            section.objects.left = createDrawing("Square", {
+                Size = Vector2.new(contentWidth, contentHeight - 2),
+                Position = window.pos + Vector2.new(contentX + 1, contentY + 1),
+                Color = library.theme.sidebar,
+                Filled = true,
+                Visible = false,
+                ZIndex = 6
+            })
             registerTheme(section.objects.left, "Color", "sidebar")
-            section.objects.leftHeader = create("Square", {Size = Vector2.new(contentWidth, 22), Position = window.pos + Vector2.new(contentX + 1, contentY + 1), Color = t.sectionheader, Filled = true, Visible = false, ZIndex = 7})
+
+            section.objects.leftHeader = createDrawing("Square", {
+                Size = Vector2.new(contentWidth, 22),
+                Position = window.pos + Vector2.new(contentX + 1, contentY + 1),
+                Color = library.theme.sectionheader,
+                Filled = true,
+                Visible = false,
+                ZIndex = 7
+            })
             registerTheme(section.objects.leftHeader, "Color", "sectionheader")
-            section.objects.leftHeaderAccent = create("Square", {Size = Vector2.new(contentWidth, 1), Position = window.pos + Vector2.new(contentX + 1, contentY + 23), Color = a, Transparency = 0.5, Filled = true, Visible = false, ZIndex = 8})
+
+            section.objects.leftHeaderAccent = createDrawing("Square", {
+                Size = Vector2.new(contentWidth, 1),
+                Position = window.pos + Vector2.new(contentX + 1, contentY + 23),
+                Color = library.accent,
+                Transparency = 0.5,
+                Filled = true,
+                Visible = false,
+                ZIndex = 8
+            })
             registerAccent(section.objects.leftHeaderAccent, "Color")
-            section.objects.leftTitle = create("Text", {Text = leftTitle:upper(), Size = 12, Font = 2, Color = t.dimtext, Outline = true, OutlineColor = Color3.new(0, 0, 0), Position = window.pos + Vector2.new(contentX + 10, contentY + 6), Visible = false, ZIndex = 8})
+
+            section.objects.leftTitle = createDrawing("Text", {
+                Text = leftTitle:upper(),
+                Size = 12,
+                Font = 2,
+                Color = library.theme.dimtext,
+                Outline = true,
+                OutlineColor = Color3.new(0, 0, 0),
+                Position = window.pos + Vector2.new(contentX + 10, contentY + 6),
+                Visible = false,
+                ZIndex = 8
+            })
             registerTheme(section.objects.leftTitle, "Color", "dimtext")
 
-            section.objects.rightOutline = create("Square", {Size = Vector2.new(contentWidth + 2, contentHeight), Position = window.pos + Vector2.new(rightX, contentY), Color = t.outline, Filled = true, Visible = false, ZIndex = 5})
+            --================================================================--
+            --                   RIGHT COLUMN                                 --
+            --================================================================--
+
+            section.objects.rightOutline = createDrawing("Square", {
+                Size = Vector2.new(contentWidth + 2, contentHeight),
+                Position = window.pos + Vector2.new(rightX, contentY),
+                Color = library.theme.outline,
+                Filled = true,
+                Visible = false,
+                ZIndex = 5
+            })
             registerTheme(section.objects.rightOutline, "Color", "outline")
-            section.objects.right = create("Square", {Size = Vector2.new(contentWidth, contentHeight - 2), Position = window.pos + Vector2.new(rightX + 1, contentY + 1), Color = t.sidebar, Filled = true, Visible = false, ZIndex = 6})
+
+            section.objects.right = createDrawing("Square", {
+                Size = Vector2.new(contentWidth, contentHeight - 2),
+                Position = window.pos + Vector2.new(rightX + 1, contentY + 1),
+                Color = library.theme.sidebar,
+                Filled = true,
+                Visible = false,
+                ZIndex = 6
+            })
             registerTheme(section.objects.right, "Color", "sidebar")
-            section.objects.rightHeader = create("Square", {Size = Vector2.new(contentWidth, 22), Position = window.pos + Vector2.new(rightX + 1, contentY + 1), Color = t.sectionheader, Filled = true, Visible = false, ZIndex = 7})
+
+            section.objects.rightHeader = createDrawing("Square", {
+                Size = Vector2.new(contentWidth, 22),
+                Position = window.pos + Vector2.new(rightX + 1, contentY + 1),
+                Color = library.theme.sectionheader,
+                Filled = true,
+                Visible = false,
+                ZIndex = 7
+            })
             registerTheme(section.objects.rightHeader, "Color", "sectionheader")
-            section.objects.rightHeaderAccent = create("Square", {Size = Vector2.new(contentWidth, 1), Position = window.pos + Vector2.new(rightX + 1, contentY + 23), Color = a, Transparency = 0.5, Filled = true, Visible = false, ZIndex = 8})
+
+            section.objects.rightHeaderAccent = createDrawing("Square", {
+                Size = Vector2.new(contentWidth, 1),
+                Position = window.pos + Vector2.new(rightX + 1, contentY + 23),
+                Color = library.accent,
+                Transparency = 0.5,
+                Filled = true,
+                Visible = false,
+                ZIndex = 8
+            })
             registerAccent(section.objects.rightHeaderAccent, "Color")
-            section.objects.rightTitle = create("Text", {Text = rightTitle:upper(), Size = 12, Font = 2, Color = t.dimtext, Outline = true, OutlineColor = Color3.new(0, 0, 0), Position = window.pos + Vector2.new(rightX + 10, contentY + 6), Visible = false, ZIndex = 8})
+
+            section.objects.rightTitle = createDrawing("Text", {
+                Text = rightTitle:upper(),
+                Size = 12,
+                Font = 2,
+                Color = library.theme.dimtext,
+                Outline = true,
+                OutlineColor = Color3.new(0, 0, 0),
+                Position = window.pos + Vector2.new(rightX + 10, contentY + 6),
+                Visible = false,
+                ZIndex = 8
+            })
             registerTheme(section.objects.rightTitle, "Color", "dimtext")
 
+            -- Store dimensions for elements
             section.contentX = contentX
             section.rightX = rightX
             section.contentY = contentY
             section.contentWidth = contentWidth
             section.contentHeight = contentHeight
 
+            --- Updates all section element positions
             function section:UpdatePositions()
                 local p = window.pos
+
                 pcall(function() section.objects.leftOutline.Position = p + Vector2.new(contentX, contentY) end)
                 pcall(function() section.objects.left.Position = p + Vector2.new(contentX + 1, contentY + 1) end)
                 pcall(function() section.objects.leftHeader.Position = p + Vector2.new(contentX + 1, contentY + 1) end)
                 pcall(function() section.objects.leftHeaderAccent.Position = p + Vector2.new(contentX + 1, contentY + 23) end)
                 pcall(function() section.objects.leftTitle.Position = p + Vector2.new(contentX + 10, contentY + 6) end)
+
                 pcall(function() section.objects.rightOutline.Position = p + Vector2.new(rightX, contentY) end)
                 pcall(function() section.objects.right.Position = p + Vector2.new(rightX + 1, contentY + 1) end)
                 pcall(function() section.objects.rightHeader.Position = p + Vector2.new(rightX + 1, contentY + 1) end)
                 pcall(function() section.objects.rightHeaderAccent.Position = p + Vector2.new(rightX + 1, contentY + 23) end)
                 pcall(function() section.objects.rightTitle.Position = p + Vector2.new(rightX + 10, contentY + 6) end)
-                for _, elem in pairs(section.leftElements) do if elem.UpdatePositions then elem:UpdatePositions() end end
-                for _, elem in pairs(section.rightElements) do if elem.UpdatePositions then elem:UpdatePositions() end end
+
+                for _, elem in pairs(section.leftElements) do
+                    if elem.UpdatePositions then
+                        elem:UpdatePositions()
+                    end
+                end
+
+                for _, elem in pairs(section.rightElements) do
+                    if elem.UpdatePositions then
+                        elem:UpdatePositions()
+                    end
+                end
             end
 
+            --- Sets the section visibility
+            --- @param state boolean The visibility state
             function section:SetVisible(state)
                 section.visible = state
-                for _, obj in pairs(section.objects) do pcall(function() obj.Visible = state end) end
-                pcall(function() section.button.objects.accent.Visible = state end)
-                pcall(function() section.button.objects.text.Color = state and Color3.new(1, 1, 1) or library.theme.dimtext end)
-                for _, elem in pairs(section.leftElements) do if elem.SetVisible then elem:SetVisible(state) end end
-                for _, elem in pairs(section.rightElements) do if elem.SetVisible then elem:SetVisible(state) end end
+
+                for _, obj in pairs(section.objects) do
+                    pcall(function() obj.Visible = state end)
+                end
+
+                pcall(function()
+                    section.button.objects.accent.Visible = state
+                end)
+                pcall(function()
+                    section.button.objects.text.Color = state
+                        and Color3.new(1, 1, 1)
+                        or library.theme.dimtext
+                end)
+
+                for _, elem in pairs(section.leftElements) do
+                    if elem.SetVisible then
+                        elem:SetVisible(state)
+                    end
+                end
+
+                for _, elem in pairs(section.rightElements) do
+                    if elem.SetVisible then
+                        elem:SetVisible(state)
+                    end
+                end
             end
 
+            --- Shows this section
             function section:Show()
                 window:ClosePopups()
-                for _, s in pairs(page.sections) do if s.SetVisible then s:SetVisible(false) end end
+
+                -- Hide all sections
+                for _, s in pairs(page.sections) do
+                    if s.SetVisible then
+                        s:SetVisible(false)
+                    end
+                end
+
+                -- Show this section
                 section:SetVisible(true)
                 page.currentSection = section
             end
 
-            -- TOGGLE (FIXED: registers for accent updates)
+            --============================================================--
+            --                         TOGGLE                             --
+            --============================================================--
+
+            --- Creates a toggle checkbox
+            --- @param config table Configuration options
+            --- @return table The toggle object
             function section:Toggle(config)
                 config = config or {}
                 local toggleName = config.name or "Toggle"
@@ -798,16 +1976,47 @@ function library:New(config)
                 local baseX = side == "left" and (section.contentX + 12) or (section.rightX + 12)
                 local elemWidth = section.contentWidth - 24
 
-                local toggle = {value = default, side = side, yOffset = offset, objects = {}}
+                local toggle = {
+                    value = default,
+                    side = side,
+                    yOffset = offset,
+                    objects = {}
+                }
 
-                toggle.objects.box = create("Square", {Size = Vector2.new(10, 10), Position = window.pos + Vector2.new(baseX, section.contentY + offset + 2), Color = library.theme.outline, Filled = true, Visible = section.visible, ZIndex = 9})
+                -- Checkbox outline
+                toggle.objects.box = createDrawing("Square", {
+                    Size = Vector2.new(10, 10),
+                    Position = window.pos + Vector2.new(baseX, section.contentY + offset + 2),
+                    Color = library.theme.outline,
+                    Filled = true,
+                    Visible = section.visible,
+                    ZIndex = 9
+                })
                 registerTheme(toggle.objects.box, "Color", "outline")
 
-                toggle.objects.fill = create("Square", {Size = Vector2.new(8, 8), Position = window.pos + Vector2.new(baseX + 1, section.contentY + offset + 3), Color = default and library.accent or library.theme.elementbg, Filled = true, Visible = section.visible, ZIndex = 10})
-                -- FIXED: Register toggle for accent/theme updates
+                -- Checkbox fill
+                toggle.objects.fill = createDrawing("Square", {
+                    Size = Vector2.new(8, 8),
+                    Position = window.pos + Vector2.new(baseX + 1, section.contentY + offset + 3),
+                    Color = default and library.accent or library.theme.elementbg,
+                    Filled = true,
+                    Visible = section.visible,
+                    ZIndex = 10
+                })
                 registerToggle(toggle.objects.fill, toggle)
 
-                toggle.objects.label = create("Text", {Text = toggleName, Size = 13, Font = 2, Color = default and library.theme.text or library.theme.dimtext, Outline = true, OutlineColor = Color3.new(0, 0, 0), Position = window.pos + Vector2.new(baseX + 18, section.contentY + offset), Visible = section.visible, ZIndex = 9})
+                -- Label
+                toggle.objects.label = createDrawing("Text", {
+                    Text = toggleName,
+                    Size = 13,
+                    Font = 2,
+                    Color = default and library.theme.text or library.theme.dimtext,
+                    Outline = true,
+                    OutlineColor = Color3.new(0, 0, 0),
+                    Position = window.pos + Vector2.new(baseX + 18, section.contentY + offset),
+                    Visible = section.visible,
+                    ZIndex = 9
+                })
 
                 toggle.baseX = baseX
                 toggle.baseY = section.contentY + offset
@@ -815,41 +2024,90 @@ function library:New(config)
 
                 function toggle:UpdatePositions()
                     local p = window.pos
-                    pcall(function() toggle.objects.box.Position = p + Vector2.new(toggle.baseX, toggle.baseY + 2) end)
-                    pcall(function() toggle.objects.fill.Position = p + Vector2.new(toggle.baseX + 1, toggle.baseY + 3) end)
-                    pcall(function() toggle.objects.label.Position = p + Vector2.new(toggle.baseX + 18, toggle.baseY) end)
+                    pcall(function()
+                        toggle.objects.box.Position = p + Vector2.new(toggle.baseX, toggle.baseY + 2)
+                    end)
+                    pcall(function()
+                        toggle.objects.fill.Position = p + Vector2.new(toggle.baseX + 1, toggle.baseY + 3)
+                    end)
+                    pcall(function()
+                        toggle.objects.label.Position = p + Vector2.new(toggle.baseX + 18, toggle.baseY)
+                    end)
                 end
 
-                function toggle:SetVisible(state) for _, obj in pairs(toggle.objects) do pcall(function() obj.Visible = state end) end end
+                function toggle:SetVisible(state)
+                    for _, obj in pairs(toggle.objects) do
+                        pcall(function() obj.Visible = state end)
+                    end
+                end
 
-                -- FIXED: Uses library.accent and library.theme instead of captured vars
-                function toggle:Set(value, nocallback)
+                function toggle:Set(value, noCallback)
                     toggle.value = value
-                    pcall(function() toggle.objects.fill.Color = value and library.accent or library.theme.elementbg end)
-                    pcall(function() toggle.objects.label.Color = value and library.theme.text or library.theme.dimtext end)
-                    if flag then library.flags[flag] = value end
-                    if not nocallback then pcall(callback, value) end
+
+                    pcall(function()
+                        toggle.objects.fill.Color = value
+                            and library.accent
+                            or library.theme.elementbg
+                    end)
+                    pcall(function()
+                        toggle.objects.label.Color = value
+                            and library.theme.text
+                            or library.theme.dimtext
+                    end)
+
+                    if flag then
+                        library.flags[flag] = value
+                    end
+
+                    if not noCallback then
+                        pcall(callback, value)
+                    end
                 end
 
-                function toggle:Get() return toggle.value end
+                function toggle:Get()
+                    return toggle.value
+                end
 
-                table.insert(library.connections, UIS.InputBegan:Connect(function(input)
-                    if input.UserInputType == Enum.UserInputType.MouseButton1 and library.open and section.visible then
-                        if library.blockingInput then return end
-                        local pos = toggle.objects.box.Position
-                        if mouseOver(pos.X - 2, pos.Y - 2, toggle.width, 16) then toggle:Set(not toggle.value) end
+                -- Click handler
+                table.insert(library.connections, UserInputService.InputBegan:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                        if library.open and section.visible and not library.blockingInput then
+                            local pos = toggle.objects.box.Position
+                            if isMouseOver(pos.X - 2, pos.Y - 2, toggle.width, 16) then
+                                toggle:Set(not toggle.value)
+                            end
+                        end
                     end
                 end))
 
-                if flag then library.flags[flag] = default library.pointers[flag] = toggle end
-                if default then pcall(callback, default) end
+                -- Initialize
+                if flag then
+                    library.flags[flag] = default
+                    library.pointers[flag] = toggle
+                end
 
-                if side == "left" then section.leftOffset = section.leftOffset + 20 else section.rightOffset = section.rightOffset + 20 end
+                if default then
+                    pcall(callback, default)
+                end
+
+                -- Update offset
+                if side == "left" then
+                    section.leftOffset = section.leftOffset + 20
+                else
+                    section.rightOffset = section.rightOffset + 20
+                end
+
                 table.insert(elements, toggle)
                 return toggle
             end
 
-            -- SLIDER
+            --============================================================--
+            --                         SLIDER                             --
+            --============================================================--
+
+            --- Creates a slider
+            --- @param config table Configuration options
+            --- @return table The slider object
             function section:Slider(config)
                 config = config or {}
                 local sliderName = config.name or "Slider"
@@ -867,23 +2125,80 @@ function library:New(config)
                 local baseX = side == "left" and (section.contentX + 12) or (section.rightX + 12)
                 local sliderWidth = section.contentWidth - 24
 
-                local slider = {value = default, min = min, max = max, dragging = false, side = side, yOffset = offset, objects = {}}
+                local slider = {
+                    value = default,
+                    min = min,
+                    max = max,
+                    dragging = false,
+                    side = side,
+                    yOffset = offset,
+                    objects = {}
+                }
 
-                slider.objects.label = create("Text", {Text = sliderName, Size = 13, Font = 2, Color = library.theme.dimtext, Outline = true, OutlineColor = Color3.new(0, 0, 0), Position = window.pos + Vector2.new(baseX, section.contentY + offset), Visible = section.visible, ZIndex = 9})
+                -- Label
+                slider.objects.label = createDrawing("Text", {
+                    Text = sliderName,
+                    Size = 13,
+                    Font = 2,
+                    Color = library.theme.dimtext,
+                    Outline = true,
+                    OutlineColor = Color3.new(0, 0, 0),
+                    Position = window.pos + Vector2.new(baseX, section.contentY + offset),
+                    Visible = section.visible,
+                    ZIndex = 9
+                })
                 registerTheme(slider.objects.label, "Color", "dimtext")
 
+                -- Value text
                 local valText = tostring(default) .. suffix
-                slider.objects.value = create("Text", {Text = valText, Size = 13, Font = 2, Color = library.accent, Outline = true, OutlineColor = Color3.new(0, 0, 0), Position = window.pos + Vector2.new(baseX + sliderWidth - textBounds(valText, 13).X, section.contentY + offset), Visible = section.visible, ZIndex = 9})
+                slider.objects.value = createDrawing("Text", {
+                    Text = valText,
+                    Size = 13,
+                    Font = 2,
+                    Color = library.accent,
+                    Outline = true,
+                    OutlineColor = Color3.new(0, 0, 0),
+                    Position = window.pos + Vector2.new(
+                        baseX + sliderWidth - getTextBounds(valText, 13).X,
+                        section.contentY + offset
+                    ),
+                    Visible = section.visible,
+                    ZIndex = 9
+                })
                 registerAccent(slider.objects.value, "Color")
 
-                slider.objects.trackOutline = create("Square", {Size = Vector2.new(sliderWidth, 12), Position = window.pos + Vector2.new(baseX, section.contentY + offset + 18), Color = library.theme.outline, Filled = true, Visible = section.visible, ZIndex = 9})
+                -- Track outline
+                slider.objects.trackOutline = createDrawing("Square", {
+                    Size = Vector2.new(sliderWidth, 12),
+                    Position = window.pos + Vector2.new(baseX, section.contentY + offset + 18),
+                    Color = library.theme.outline,
+                    Filled = true,
+                    Visible = section.visible,
+                    ZIndex = 9
+                })
                 registerTheme(slider.objects.trackOutline, "Color", "outline")
 
-                slider.objects.track = create("Square", {Size = Vector2.new(sliderWidth - 2, 10), Position = window.pos + Vector2.new(baseX + 1, section.contentY + offset + 19), Color = library.theme.elementbg, Filled = true, Visible = section.visible, ZIndex = 10})
+                -- Track background
+                slider.objects.track = createDrawing("Square", {
+                    Size = Vector2.new(sliderWidth - 2, 10),
+                    Position = window.pos + Vector2.new(baseX + 1, section.contentY + offset + 19),
+                    Color = library.theme.elementbg,
+                    Filled = true,
+                    Visible = section.visible,
+                    ZIndex = 10
+                })
                 registerTheme(slider.objects.track, "Color", "elementbg")
 
+                -- Fill bar
                 local pct = (default - min) / (max - min)
-                slider.objects.fill = create("Square", {Size = Vector2.new(math.max((sliderWidth - 2) * pct, 0), 10), Position = window.pos + Vector2.new(baseX + 1, section.contentY + offset + 19), Color = library.accent, Filled = true, Visible = section.visible, ZIndex = 11})
+                slider.objects.fill = createDrawing("Square", {
+                    Size = Vector2.new(math.max((sliderWidth - 2) * pct, 0), 10),
+                    Position = window.pos + Vector2.new(baseX + 1, section.contentY + offset + 19),
+                    Color = library.accent,
+                    Filled = true,
+                    Visible = section.visible,
+                    ZIndex = 11
+                })
                 registerAccent(slider.objects.fill, "Color")
 
                 slider.baseX = baseX
@@ -894,40 +2209,91 @@ function library:New(config)
                 function slider:UpdatePositions()
                     local p = window.pos
                     local valText = tostring(slider.value) .. slider.suffix
-                    pcall(function() slider.objects.label.Position = p + Vector2.new(slider.baseX, slider.baseY) end)
-                    pcall(function() slider.objects.value.Position = p + Vector2.new(slider.baseX + slider.width - textBounds(valText, 13).X, slider.baseY) end)
-                    pcall(function() slider.objects.trackOutline.Position = p + Vector2.new(slider.baseX, slider.baseY + 18) end)
-                    pcall(function() slider.objects.track.Position = p + Vector2.new(slider.baseX + 1, slider.baseY + 19) end)
-                    pcall(function() slider.objects.fill.Position = p + Vector2.new(slider.baseX + 1, slider.baseY + 19) end)
+
+                    pcall(function()
+                        slider.objects.label.Position = p + Vector2.new(slider.baseX, slider.baseY)
+                    end)
+                    pcall(function()
+                        slider.objects.value.Position = p + Vector2.new(
+                            slider.baseX + slider.width - getTextBounds(valText, 13).X,
+                            slider.baseY
+                        )
+                    end)
+                    pcall(function()
+                        slider.objects.trackOutline.Position = p + Vector2.new(slider.baseX, slider.baseY + 18)
+                    end)
+                    pcall(function()
+                        slider.objects.track.Position = p + Vector2.new(slider.baseX + 1, slider.baseY + 19)
+                    end)
+                    pcall(function()
+                        slider.objects.fill.Position = p + Vector2.new(slider.baseX + 1, slider.baseY + 19)
+                    end)
                 end
 
-                function slider:SetVisible(state) for _, obj in pairs(slider.objects) do pcall(function() obj.Visible = state end) end end
+                function slider:SetVisible(state)
+                    for _, obj in pairs(slider.objects) do
+                        pcall(function() obj.Visible = state end)
+                    end
+                end
 
-                function slider:Set(value, nocallback)
+                function slider:Set(value, noCallback)
                     value = math.clamp(value, min, max)
                     value = math.floor(value / increment + 0.5) * increment
                     slider.value = value
+
                     local pct = (value - min) / (max - min)
-                    pcall(function() slider.objects.fill.Size = Vector2.new(math.max((slider.width - 2) * pct, 0), 10) end)
+                    pcall(function()
+                        slider.objects.fill.Size = Vector2.new(
+                            math.max((slider.width - 2) * pct, 0),
+                            10
+                        )
+                    end)
+
                     local valText = tostring(value) .. slider.suffix
-                    pcall(function() slider.objects.value.Text = valText; slider.objects.value.Position = window.pos + Vector2.new(slider.baseX + slider.width - textBounds(valText, 13).X, slider.baseY) end)
-                    if flag then library.flags[flag] = value end
-                    if not nocallback then pcall(callback, value) end
+                    pcall(function()
+                        slider.objects.value.Text = valText
+                        slider.objects.value.Position = window.pos + Vector2.new(
+                            slider.baseX + slider.width - getTextBounds(valText, 13).X,
+                            slider.baseY
+                        )
+                    end)
+
+                    if flag then
+                        library.flags[flag] = value
+                    end
+
+                    if not noCallback then
+                        pcall(callback, value)
+                    end
                 end
 
-                function slider:Get() return slider.value end
+                function slider:Get()
+                    return slider.value
+                end
 
-                table.insert(library.connections, UIS.InputBegan:Connect(function(input)
-                    if input.UserInputType == Enum.UserInputType.MouseButton1 and library.open and section.visible then
-                        if library.blockingInput then return end
-                        local pos = slider.objects.trackOutline.Position
-                        if mouseOver(pos.X, pos.Y, slider.width, 12) then slider.dragging = true end
+                -- Input handlers
+                table.insert(library.connections, UserInputService.InputBegan:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                        if library.open and section.visible and not library.blockingInput then
+                            local pos = slider.objects.trackOutline.Position
+                            if isMouseOver(pos.X, pos.Y, slider.width, 12) then
+                                slider.dragging = true
+                            end
+                        end
                     end
                 end))
-                table.insert(library.connections, UIS.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 then slider.dragging = false end end))
-                table.insert(library.connections, RS.RenderStepped:Connect(function()
+
+                table.insert(library.connections, UserInputService.InputEnded:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                        slider.dragging = false
+                    end
+                end))
+
+                table.insert(library.connections, RunService.RenderStepped:Connect(function()
                     if slider.dragging and library.open then
-                        local success, mouse = pcall(function() return UIS:GetMouseLocation() end)
+                        local success, mouse = pcall(function()
+                            return UserInputService:GetMouseLocation()
+                        end)
                         if success then
                             local pos = slider.objects.trackOutline.Position
                             local pct = math.clamp((mouse.X - pos.X) / slider.width, 0, 1)
@@ -936,14 +2302,30 @@ function library:New(config)
                     end
                 end))
 
-                if flag then library.flags[flag] = default library.pointers[flag] = slider end
+                -- Initialize
+                if flag then
+                    library.flags[flag] = default
+                    library.pointers[flag] = slider
+                end
 
-                if side == "left" then section.leftOffset = section.leftOffset + 36 else section.rightOffset = section.rightOffset + 36 end
+                -- Update offset
+                if side == "left" then
+                    section.leftOffset = section.leftOffset + 36
+                else
+                    section.rightOffset = section.rightOffset + 36
+                end
+
                 table.insert(elements, slider)
                 return slider
             end
 
-            -- BUTTON
+            --============================================================--
+            --                         BUTTON                             --
+            --============================================================--
+
+            --- Creates a button
+            --- @param config table Configuration options
+            --- @return table The button object
             function section:Button(config)
                 config = config or {}
                 local buttonName = config.name or "Button"
@@ -955,13 +2337,47 @@ function library:New(config)
                 local baseX = side == "left" and (section.contentX + 12) or (section.rightX + 12)
                 local btnWidth = section.contentWidth - 24
 
-                local button = {side = side, yOffset = offset, objects = {}}
+                local button = {
+                    side = side,
+                    yOffset = offset,
+                    objects = {}
+                }
 
-                button.objects.outline = create("Square", {Size = Vector2.new(btnWidth, 22), Position = window.pos + Vector2.new(baseX, section.contentY + offset), Color = library.theme.outline, Filled = true, Visible = section.visible, ZIndex = 9})
+                -- Button outline
+                button.objects.outline = createDrawing("Square", {
+                    Size = Vector2.new(btnWidth, 22),
+                    Position = window.pos + Vector2.new(baseX, section.contentY + offset),
+                    Color = library.theme.outline,
+                    Filled = true,
+                    Visible = section.visible,
+                    ZIndex = 9
+                })
                 registerTheme(button.objects.outline, "Color", "outline")
-                button.objects.bg = create("Square", {Size = Vector2.new(btnWidth - 2, 20), Position = window.pos + Vector2.new(baseX + 1, section.contentY + offset + 1), Color = library.theme.elementbg, Filled = true, Visible = section.visible, ZIndex = 10})
+
+                -- Button background
+                button.objects.bg = createDrawing("Square", {
+                    Size = Vector2.new(btnWidth - 2, 20),
+                    Position = window.pos + Vector2.new(baseX + 1, section.contentY + offset + 1),
+                    Color = library.theme.elementbg,
+                    Filled = true,
+                    Visible = section.visible,
+                    ZIndex = 10
+                })
                 registerTheme(button.objects.bg, "Color", "elementbg")
-                button.objects.label = create("Text", {Text = buttonName, Size = 13, Font = 2, Color = library.theme.dimtext, Outline = true, OutlineColor = Color3.new(0, 0, 0), Center = true, Position = window.pos + Vector2.new(baseX + btnWidth/2, section.contentY + offset + 4), Visible = section.visible, ZIndex = 11})
+
+                -- Button label
+                button.objects.label = createDrawing("Text", {
+                    Text = buttonName,
+                    Size = 13,
+                    Font = 2,
+                    Color = library.theme.dimtext,
+                    Outline = true,
+                    OutlineColor = Color3.new(0, 0, 0),
+                    Center = true,
+                    Position = window.pos + Vector2.new(baseX + btnWidth / 2, section.contentY + offset + 4),
+                    Visible = section.visible,
+                    ZIndex = 11
+                })
                 registerTheme(button.objects.label, "Color", "dimtext")
 
                 button.baseX = baseX
@@ -970,31 +2386,67 @@ function library:New(config)
 
                 function button:UpdatePositions()
                     local p = window.pos
-                    pcall(function() button.objects.outline.Position = p + Vector2.new(button.baseX, button.baseY) end)
-                    pcall(function() button.objects.bg.Position = p + Vector2.new(button.baseX + 1, button.baseY + 1) end)
-                    pcall(function() button.objects.label.Position = p + Vector2.new(button.baseX + button.width/2, button.baseY + 4) end)
+                    pcall(function()
+                        button.objects.outline.Position = p + Vector2.new(button.baseX, button.baseY)
+                    end)
+                    pcall(function()
+                        button.objects.bg.Position = p + Vector2.new(button.baseX + 1, button.baseY + 1)
+                    end)
+                    pcall(function()
+                        button.objects.label.Position = p + Vector2.new(button.baseX + button.width / 2, button.baseY + 4)
+                    end)
                 end
 
-                function button:SetVisible(state) for _, obj in pairs(button.objects) do pcall(function() obj.Visible = state end) end end
+                function button:SetVisible(state)
+                    for _, obj in pairs(button.objects) do
+                        pcall(function() obj.Visible = state end)
+                    end
+                end
 
-                table.insert(library.connections, UIS.InputBegan:Connect(function(input)
-                    if input.UserInputType == Enum.UserInputType.MouseButton1 and library.open and section.visible then
-                        if library.blockingInput then return end
-                        local pos = button.objects.outline.Position
-                        if mouseOver(pos.X, pos.Y, button.width, 22) then
-                            pcall(function() button.objects.bg.Color = library.accent; button.objects.label.Color = library.theme.text end)
-                            pcall(callback)
-                            task.delay(0.15, function() pcall(function() button.objects.bg.Color = library.theme.elementbg; button.objects.label.Color = library.theme.dimtext end) end)
+                -- Click handler
+                table.insert(library.connections, UserInputService.InputBegan:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                        if library.open and section.visible and not library.blockingInput then
+                            local pos = button.objects.outline.Position
+                            if isMouseOver(pos.X, pos.Y, button.width, 22) then
+                                -- Visual feedback
+                                pcall(function()
+                                    button.objects.bg.Color = library.accent
+                                    button.objects.label.Color = library.theme.text
+                                end)
+
+                                pcall(callback)
+
+                                -- Reset after delay
+                                task.delay(0.15, function()
+                                    pcall(function()
+                                        button.objects.bg.Color = library.theme.elementbg
+                                        button.objects.label.Color = library.theme.dimtext
+                                    end)
+                                end)
+                            end
                         end
                     end
                 end))
 
-                if side == "left" then section.leftOffset = section.leftOffset + 28 else section.rightOffset = section.rightOffset + 28 end
+                -- Update offset
+                if side == "left" then
+                    section.leftOffset = section.leftOffset + 28
+                else
+                    section.rightOffset = section.rightOffset + 28
+                end
+
                 table.insert(elements, button)
                 return button
             end
 
-            -- DROPDOWN
+            --============================================================--
+            --                        DROPDOWN                            --
+            --============================================================--
+
+            --- Creates a dropdown menu
+            --- @param config table Configuration options
+            --- @return table The dropdown object
             function section:Dropdown(config)
                 config = config or {}
                 local dropdownName = config.name or "Dropdown"
@@ -1010,19 +2462,84 @@ function library:New(config)
                 local baseX = side == "left" and (section.contentX + 12) or (section.rightX + 12)
                 local ddWidth = section.contentWidth - 24
 
-                local dropdown = {value = multi and {} or default, items = items, multi = multi, open = false, side = side, yOffset = offset, objects = {}, itemObjects = {}, blockArea = nil}
+                local dropdown = {
+                    value = multi and {} or default,
+                    items = items,
+                    multi = multi,
+                    open = false,
+                    side = side,
+                    yOffset = offset,
+                    objects = {},
+                    itemObjects = {},
+                    blockArea = nil
+                }
 
-                dropdown.objects.label = create("Text", {Text = dropdownName, Size = 13, Font = 2, Color = library.theme.dimtext, Outline = true, OutlineColor = Color3.new(0, 0, 0), Position = window.pos + Vector2.new(baseX, section.contentY + offset), Visible = section.visible, ZIndex = 9})
+                -- Label
+                dropdown.objects.label = createDrawing("Text", {
+                    Text = dropdownName,
+                    Size = 13,
+                    Font = 2,
+                    Color = library.theme.dimtext,
+                    Outline = true,
+                    OutlineColor = Color3.new(0, 0, 0),
+                    Position = window.pos + Vector2.new(baseX, section.contentY + offset),
+                    Visible = section.visible,
+                    ZIndex = 9
+                })
                 registerTheme(dropdown.objects.label, "Color", "dimtext")
-                dropdown.objects.outline = create("Square", {Size = Vector2.new(ddWidth, 22), Position = window.pos + Vector2.new(baseX, section.contentY + offset + 18), Color = library.theme.outline, Filled = true, Visible = section.visible, ZIndex = 9})
+
+                -- Box outline
+                dropdown.objects.outline = createDrawing("Square", {
+                    Size = Vector2.new(ddWidth, 22),
+                    Position = window.pos + Vector2.new(baseX, section.contentY + offset + 18),
+                    Color = library.theme.outline,
+                    Filled = true,
+                    Visible = section.visible,
+                    ZIndex = 9
+                })
                 registerTheme(dropdown.objects.outline, "Color", "outline")
-                dropdown.objects.bg = create("Square", {Size = Vector2.new(ddWidth - 2, 20), Position = window.pos + Vector2.new(baseX + 1, section.contentY + offset + 19), Color = library.theme.elementbg, Filled = true, Visible = section.visible, ZIndex = 10})
+
+                -- Box background
+                dropdown.objects.bg = createDrawing("Square", {
+                    Size = Vector2.new(ddWidth - 2, 20),
+                    Position = window.pos + Vector2.new(baseX + 1, section.contentY + offset + 19),
+                    Color = library.theme.elementbg,
+                    Filled = true,
+                    Visible = section.visible,
+                    ZIndex = 10
+                })
                 registerTheme(dropdown.objects.bg, "Color", "elementbg")
 
-                local displayText = multi and (#dropdown.value > 0 and table.concat(dropdown.value, ", ") or "None") or default
-                dropdown.objects.selected = create("Text", {Text = displayText, Size = 13, Font = 2, Color = library.theme.text, Outline = true, OutlineColor = Color3.new(0, 0, 0), Position = window.pos + Vector2.new(baseX + 8, section.contentY + offset + 22), Visible = section.visible, ZIndex = 11})
+                -- Selected text
+                local displayText = multi
+                    and (#dropdown.value > 0 and table.concat(dropdown.value, ", ") or "None")
+                    or default
+
+                dropdown.objects.selected = createDrawing("Text", {
+                    Text = displayText,
+                    Size = 13,
+                    Font = 2,
+                    Color = library.theme.text,
+                    Outline = true,
+                    OutlineColor = Color3.new(0, 0, 0),
+                    Position = window.pos + Vector2.new(baseX + 8, section.contentY + offset + 22),
+                    Visible = section.visible,
+                    ZIndex = 11
+                })
                 registerTheme(dropdown.objects.selected, "Color", "text")
-                dropdown.objects.arrow = create("Text", {Text = "v", Size = 13, Font = 2, Color = library.theme.dimtext, Outline = true, OutlineColor = Color3.new(0, 0, 0), Position = window.pos + Vector2.new(baseX + ddWidth - 14, section.contentY + offset + 22), Visible = section.visible, ZIndex = 11})
+
+                -- Arrow
+                dropdown.objects.arrow = createDrawing("Text", {
+                    Text = "v",
+                    Size = 13,
+                    Font = 2,
+                    Color = library.theme.dimtext,
+                    Outline = true,
+                    OutlineColor = Color3.new(0, 0, 0),
+                    Position = window.pos + Vector2.new(baseX + ddWidth - 14, section.contentY + offset + 22),
+                    Visible = section.visible,
+                    ZIndex = 11
+                })
                 registerTheme(dropdown.objects.arrow, "Color", "dimtext")
 
                 dropdown.baseX = baseX
@@ -1031,79 +2548,227 @@ function library:New(config)
 
                 function dropdown:UpdatePositions()
                     local p = window.pos
-                    pcall(function() dropdown.objects.label.Position = p + Vector2.new(dropdown.baseX, dropdown.baseY) end)
-                    pcall(function() dropdown.objects.outline.Position = p + Vector2.new(dropdown.baseX, dropdown.baseY + 18) end)
-                    pcall(function() dropdown.objects.bg.Position = p + Vector2.new(dropdown.baseX + 1, dropdown.baseY + 19) end)
-                    pcall(function() dropdown.objects.selected.Position = p + Vector2.new(dropdown.baseX + 8, dropdown.baseY + 22) end)
-                    pcall(function() dropdown.objects.arrow.Position = p + Vector2.new(dropdown.baseX + dropdown.width - 14, dropdown.baseY + 22) end)
+                    pcall(function()
+                        dropdown.objects.label.Position = p + Vector2.new(dropdown.baseX, dropdown.baseY)
+                    end)
+                    pcall(function()
+                        dropdown.objects.outline.Position = p + Vector2.new(dropdown.baseX, dropdown.baseY + 18)
+                    end)
+                    pcall(function()
+                        dropdown.objects.bg.Position = p + Vector2.new(dropdown.baseX + 1, dropdown.baseY + 19)
+                    end)
+                    pcall(function()
+                        dropdown.objects.selected.Position = p + Vector2.new(dropdown.baseX + 8, dropdown.baseY + 22)
+                    end)
+                    pcall(function()
+                        dropdown.objects.arrow.Position = p + Vector2.new(dropdown.baseX + dropdown.width - 14, dropdown.baseY + 22)
+                    end)
                 end
 
-                function dropdown:SetVisible(state) for _, obj in pairs(dropdown.objects) do pcall(function() obj.Visible = state end) end if not state then dropdown:Close() end end
+                function dropdown:SetVisible(state)
+                    for _, obj in pairs(dropdown.objects) do
+                        pcall(function() obj.Visible = state end)
+                    end
+                    if not state then
+                        dropdown:Close()
+                    end
+                end
+
                 function dropdown:Close()
                     dropdown.open = false
                     library.blockingInput = false
                     dropdown.blockArea = nil
-                    for _, obj in pairs(dropdown.itemObjects) do pcall(function() obj:Remove() end) end
+
+                    for _, obj in pairs(dropdown.itemObjects) do
+                        pcall(function() obj:Remove() end)
+                    end
                     dropdown.itemObjects = {}
-                    if window.activeDropdown == dropdown then window.activeDropdown = nil end
+
+                    if window.activeDropdown == dropdown then
+                        window.activeDropdown = nil
+                    end
                 end
 
                 function dropdown:Open()
-                    if dropdown.open then dropdown:Close() return end
+                    if dropdown.open then
+                        dropdown:Close()
+                        return
+                    end
+
                     window:ClosePopups()
                     dropdown.open = true
                     window.activeDropdown = dropdown
                     library.blockingInput = true
+
                     local pos = dropdown.objects.outline.Position
                     local listH = math.min(#items * 20 + 4, 164)
-                    dropdown.blockArea = {x = pos.X, y = pos.Y + 24, w = dropdown.width, h = listH}
-                    local listBg = create("Square", {Size = Vector2.new(dropdown.width, listH), Position = Vector2.new(pos.X, pos.Y + 24), Color = library.theme.elementbg, Filled = true, Visible = true, ZIndex = 50})
+                    dropdown.blockArea = {
+                        x = pos.X,
+                        y = pos.Y + 24,
+                        w = dropdown.width,
+                        h = listH
+                    }
+
+                    -- List background
+                    local listBg = createDrawing("Square", {
+                        Size = Vector2.new(dropdown.width, listH),
+                        Position = Vector2.new(pos.X, pos.Y + 24),
+                        Color = library.theme.elementbg,
+                        Filled = true,
+                        Visible = true,
+                        ZIndex = 50
+                    })
                     table.insert(dropdown.itemObjects, listBg)
-                    local listOutline = create("Square", {Size = Vector2.new(dropdown.width, listH), Position = Vector2.new(pos.X, pos.Y + 24), Color = library.theme.outline, Filled = false, Thickness = 1, Visible = true, ZIndex = 51})
+
+                    -- List outline
+                    local listOutline = createDrawing("Square", {
+                        Size = Vector2.new(dropdown.width, listH),
+                        Position = Vector2.new(pos.X, pos.Y + 24),
+                        Color = library.theme.outline,
+                        Filled = false,
+                        Thickness = 1,
+                        Visible = true,
+                        ZIndex = 51
+                    })
                     table.insert(dropdown.itemObjects, listOutline)
+
+                    -- Item texts
                     for i, item in ipairs(items) do
-                        local isSelected = multi and table.find(dropdown.value, item) or dropdown.value == item
-                        local itemText = create("Text", {Text = item, Size = 13, Font = 2, Color = isSelected and library.accent or library.theme.text, Outline = true, OutlineColor = Color3.new(0, 0, 0), Position = Vector2.new(pos.X + 8, pos.Y + 28 + (i-1) * 20), Visible = true, ZIndex = 52})
+                        local isSelected = multi
+                            and table.find(dropdown.value, item)
+                            or dropdown.value == item
+
+                        local itemText = createDrawing("Text", {
+                            Text = item,
+                            Size = 13,
+                            Font = 2,
+                            Color = isSelected and library.accent or library.theme.text,
+                            Outline = true,
+                            OutlineColor = Color3.new(0, 0, 0),
+                            Position = Vector2.new(pos.X + 8, pos.Y + 28 + (i - 1) * 20),
+                            Visible = true,
+                            ZIndex = 52
+                        })
                         table.insert(dropdown.itemObjects, itemText)
                     end
                 end
 
-                function dropdown:Set(value, nocallback)
-                    if multi then dropdown.value = type(value) == "table" and value or {value}; pcall(function() dropdown.objects.selected.Text = #dropdown.value > 0 and table.concat(dropdown.value, ", ") or "None" end)
-                    else dropdown.value = value; pcall(function() dropdown.objects.selected.Text = value end) end
-                    if flag then library.flags[flag] = dropdown.value end
-                    if not nocallback then pcall(callback, dropdown.value) end
-                end
-                function dropdown:Get() return dropdown.value end
-                function dropdown:Refresh(newItems) dropdown.items = newItems; items = newItems; if dropdown.open then dropdown:Close() dropdown:Open() end end
+                function dropdown:Set(value, noCallback)
+                    if multi then
+                        dropdown.value = type(value) == "table" and value or {value}
+                        pcall(function()
+                            dropdown.objects.selected.Text = #dropdown.value > 0
+                                and table.concat(dropdown.value, ", ")
+                                or "None"
+                        end)
+                    else
+                        dropdown.value = value
+                        pcall(function()
+                            dropdown.objects.selected.Text = value
+                        end)
+                    end
 
-                table.insert(library.connections, UIS.InputBegan:Connect(function(input)
-                    if input.UserInputType == Enum.UserInputType.MouseButton1 and library.open and section.visible then
-                        local pos = dropdown.objects.outline.Position
-                        if mouseOver(pos.X, pos.Y, dropdown.width, 22) then dropdown:Open() return end
-                        if dropdown.open then
-                            for i, item in ipairs(items) do
-                                local itemY = pos.Y + 24 + (i-1) * 20
-                                if mouseOver(pos.X, itemY, dropdown.width, 20) then
-                                    if multi then local idx = table.find(dropdown.value, item); if idx then table.remove(dropdown.value, idx) else table.insert(dropdown.value, item) end; dropdown:Set(dropdown.value); dropdown:Close(); dropdown:Open()
-                                    else dropdown:Set(item); dropdown:Close() end
-                                    return
+                    if flag then
+                        library.flags[flag] = dropdown.value
+                    end
+
+                    if not noCallback then
+                        pcall(callback, dropdown.value)
+                    end
+                end
+
+                function dropdown:Get()
+                    return dropdown.value
+                end
+
+                function dropdown:Refresh(newItems)
+                    dropdown.items = newItems
+                    items = newItems
+                    if dropdown.open then
+                        dropdown:Close()
+                        dropdown:Open()
+                    end
+                end
+
+                -- Click handler
+                table.insert(library.connections, UserInputService.InputBegan:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                        if library.open and section.visible then
+                            local pos = dropdown.objects.outline.Position
+
+                            -- Toggle dropdown
+                            if isMouseOver(pos.X, pos.Y, dropdown.width, 22) then
+                                dropdown:Open()
+                                return
+                            end
+
+                            -- Handle item selection
+                            if dropdown.open then
+                                for i, item in ipairs(items) do
+                                    local itemY = pos.Y + 24 + (i - 1) * 20
+                                    if isMouseOver(pos.X, itemY, dropdown.width, 20) then
+                                        if multi then
+                                            local idx = table.find(dropdown.value, item)
+                                            if idx then
+                                                table.remove(dropdown.value, idx)
+                                            else
+                                                table.insert(dropdown.value, item)
+                                            end
+                                            dropdown:Set(dropdown.value)
+                                            dropdown:Close()
+                                            dropdown:Open()
+                                        else
+                                            dropdown:Set(item)
+                                            dropdown:Close()
+                                        end
+                                        return
+                                    end
+                                end
+
+                                -- Close if clicked outside
+                                if dropdown.blockArea then
+                                    if not isMouseOver(
+                                        dropdown.blockArea.x,
+                                        dropdown.blockArea.y,
+                                        dropdown.blockArea.w,
+                                        dropdown.blockArea.h
+                                    ) then
+                                        dropdown:Close()
+                                    end
                                 end
                             end
-                            if dropdown.blockArea and not mouseOver(dropdown.blockArea.x, dropdown.blockArea.y, dropdown.blockArea.w, dropdown.blockArea.h) then dropdown:Close() end
                         end
                     end
                 end))
 
-                if flag then library.flags[flag] = multi and {} or default library.pointers[flag] = dropdown end
-                if not multi and default ~= "" then pcall(callback, default) end
+                -- Initialize
+                if flag then
+                    library.flags[flag] = multi and {} or default
+                    library.pointers[flag] = dropdown
+                end
 
-                if side == "left" then section.leftOffset = section.leftOffset + 46 else section.rightOffset = section.rightOffset + 46 end
+                if not multi and default ~= "" then
+                    pcall(callback, default)
+                end
+
+                -- Update offset
+                if side == "left" then
+                    section.leftOffset = section.leftOffset + 46
+                else
+                    section.rightOffset = section.rightOffset + 46
+                end
+
                 table.insert(elements, dropdown)
                 return dropdown
             end
 
-            -- KEYBIND
+            --============================================================--
+            --                        KEYBIND                             --
+            --============================================================--
+
+            --- Creates a keybind selector
+            --- @param config table Configuration options
+            --- @return table The keybind object
             function section:Keybind(config)
                 config = config or {}
                 local keybindName = config.name or "Keybind"
@@ -1118,13 +2783,45 @@ function library:New(config)
                 local baseX = side == "left" and (section.contentX + 12) or (section.rightX + 12)
                 local kbWidth = section.contentWidth - 24
 
-                local keybind = {value = default, listening = false, side = side, yOffset = offset, objects = {}, ignoreNextClick = false}
+                local keybind = {
+                    value = default,
+                    listening = false,
+                    side = side,
+                    yOffset = offset,
+                    objects = {},
+                    ignoreNextClick = false
+                }
 
-                keybind.objects.label = create("Text", {Text = keybindName, Size = 13, Font = 2, Color = library.theme.dimtext, Outline = true, OutlineColor = Color3.new(0, 0, 0), Position = window.pos + Vector2.new(baseX, section.contentY + offset + 2), Visible = section.visible, ZIndex = 9})
+                -- Label
+                keybind.objects.label = createDrawing("Text", {
+                    Text = keybindName,
+                    Size = 13,
+                    Font = 2,
+                    Color = library.theme.dimtext,
+                    Outline = true,
+                    OutlineColor = Color3.new(0, 0, 0),
+                    Position = window.pos + Vector2.new(baseX, section.contentY + offset + 2),
+                    Visible = section.visible,
+                    ZIndex = 9
+                })
                 registerTheme(keybind.objects.label, "Color", "dimtext")
 
+                -- Key text
                 local keyText = "[" .. getKeyName(default) .. "]"
-                keybind.objects.key = create("Text", {Text = keyText, Size = 13, Font = 2, Color = library.accent, Outline = true, OutlineColor = Color3.new(0, 0, 0), Position = window.pos + Vector2.new(baseX + kbWidth - textBounds(keyText, 13).X, section.contentY + offset + 2), Visible = section.visible, ZIndex = 9})
+                keybind.objects.key = createDrawing("Text", {
+                    Text = keyText,
+                    Size = 13,
+                    Font = 2,
+                    Color = library.accent,
+                    Outline = true,
+                    OutlineColor = Color3.new(0, 0, 0),
+                    Position = window.pos + Vector2.new(
+                        baseX + kbWidth - getTextBounds(keyText, 13).X,
+                        section.contentY + offset + 2
+                    ),
+                    Visible = section.visible,
+                    ZIndex = 9
+                })
                 registerAccent(keybind.objects.key, "Color")
 
                 keybind.baseX = baseX
@@ -1134,62 +2831,141 @@ function library:New(config)
                 function keybind:UpdatePositions()
                     local p = window.pos
                     local keyText = "[" .. getKeyName(keybind.value) .. "]"
-                    pcall(function() keybind.objects.label.Position = p + Vector2.new(keybind.baseX, keybind.baseY + 2) end)
-                    pcall(function() keybind.objects.key.Position = p + Vector2.new(keybind.baseX + keybind.width - textBounds(keyText, 13).X, keybind.baseY + 2) end)
+
+                    pcall(function()
+                        keybind.objects.label.Position = p + Vector2.new(keybind.baseX, keybind.baseY + 2)
+                    end)
+                    pcall(function()
+                        keybind.objects.key.Position = p + Vector2.new(
+                            keybind.baseX + keybind.width - getTextBounds(keyText, 13).X,
+                            keybind.baseY + 2
+                        )
+                    end)
                 end
 
-                function keybind:SetVisible(state) for _, obj in pairs(keybind.objects) do pcall(function() obj.Visible = state end) end end
+                function keybind:SetVisible(state)
+                    for _, obj in pairs(keybind.objects) do
+                        pcall(function() obj.Visible = state end)
+                    end
+                end
 
                 function keybind:Set(key)
                     keybind.value = key
                     local keyText = "[" .. getKeyName(key) .. "]"
-                    pcall(function() keybind.objects.key.Text = keyText; keybind.objects.key.Position = window.pos + Vector2.new(keybind.baseX + keybind.width - textBounds(keyText, 13).X, keybind.baseY + 2); keybind.objects.key.Color = library.accent end)
-                    if flag then library.flags[flag] = key end
-                    if isMenuToggle then library.menuKeybind = key window:UpdateToggleHint() end
-                end
-                function keybind:Get() return keybind.value end
 
-                table.insert(library.connections, UIS.InputBegan:Connect(function(input)
-                    if input.UserInputType == Enum.UserInputType.MouseButton1 and library.open and section.visible then
-                        if library.blockingInput then return end
-                        if not keybind.listening then
-                            local pos = keybind.objects.label.Position
-                            if mouseOver(pos.X - 10, pos.Y - 4, keybind.width, 22) then
-                                keybind.listening = true
-                                keybind.ignoreNextClick = true
-                                pcall(function() keybind.objects.key.Text = "[...]"; keybind.objects.key.Color = library.theme.warning end)
-                                return
+                    pcall(function()
+                        keybind.objects.key.Text = keyText
+                        keybind.objects.key.Position = window.pos + Vector2.new(
+                            keybind.baseX + keybind.width - getTextBounds(keyText, 13).X,
+                            keybind.baseY + 2
+                        )
+                        keybind.objects.key.Color = library.accent
+                    end)
+
+                    if flag then
+                        library.flags[flag] = key
+                    end
+
+                    if isMenuToggle then
+                        library.menuKeybind = key
+                        window:UpdateToggleHint()
+                    end
+                end
+
+                function keybind:Get()
+                    return keybind.value
+                end
+
+                -- Input handler
+                table.insert(library.connections, UserInputService.InputBegan:Connect(function(input)
+                    -- Start listening
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                        if library.open and section.visible and not library.blockingInput then
+                            if not keybind.listening then
+                                local pos = keybind.objects.label.Position
+                                if isMouseOver(pos.X - 10, pos.Y - 4, keybind.width, 22) then
+                                    keybind.listening = true
+                                    keybind.ignoreNextClick = true
+                                    pcall(function()
+                                        keybind.objects.key.Text = "[...]"
+                                        keybind.objects.key.Color = library.theme.warning
+                                    end)
+                                    return
+                                end
                             end
                         end
                     end
+
+                    -- Capture key
                     if keybind.listening then
-                        if keybind.ignoreNextClick and input.UserInputType == Enum.UserInputType.MouseButton1 then return end
-                        local key = nil
-                        if input.UserInputType == Enum.UserInputType.Keyboard then
-                            if input.KeyCode == Enum.KeyCode.Escape then key = Enum.KeyCode.Unknown else key = input.KeyCode end
-                        elseif input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.MouseButton2 or input.UserInputType == Enum.UserInputType.MouseButton3 then
-                            if not keybind.ignoreNextClick then key = input.UserInputType end
+                        if keybind.ignoreNextClick and input.UserInputType == Enum.UserInputType.MouseButton1 then
+                            return
                         end
-                        if key then keybind:Set(key) keybind.listening = false keybind.ignoreNextClick = false end
+
+                        local key = nil
+
+                        if input.UserInputType == Enum.UserInputType.Keyboard then
+                            if input.KeyCode == Enum.KeyCode.Escape then
+                                key = Enum.KeyCode.Unknown
+                            else
+                                key = input.KeyCode
+                            end
+                        elseif input.UserInputType == Enum.UserInputType.MouseButton1 or
+                               input.UserInputType == Enum.UserInputType.MouseButton2 or
+                               input.UserInputType == Enum.UserInputType.MouseButton3 then
+                            if not keybind.ignoreNextClick then
+                                key = input.UserInputType
+                            end
+                        end
+
+                        if key then
+                            keybind:Set(key)
+                            keybind.listening = false
+                            keybind.ignoreNextClick = false
+                        end
                         return
                     end
+
+                    -- Trigger callback
                     if keybind.value ~= Enum.KeyCode.Unknown and not keybind.listening then
-                        if input.KeyCode == keybind.value or input.UserInputType == keybind.value then pcall(callback, keybind.value) end
+                        if input.KeyCode == keybind.value or input.UserInputType == keybind.value then
+                            pcall(callback, keybind.value)
+                        end
                     end
                 end))
 
-                table.insert(library.connections, UIS.InputEnded:Connect(function(input)
-                    if input.UserInputType == Enum.UserInputType.MouseButton1 and keybind.ignoreNextClick then task.delay(0.1, function() keybind.ignoreNextClick = false end) end
+                table.insert(library.connections, UserInputService.InputEnded:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 and keybind.ignoreNextClick then
+                        task.delay(0.1, function()
+                            keybind.ignoreNextClick = false
+                        end)
+                    end
                 end))
 
-                if flag then library.flags[flag] = default library.pointers[flag] = keybind end
+                -- Initialize
+                if flag then
+                    library.flags[flag] = default
+                    library.pointers[flag] = keybind
+                end
 
-                if side == "left" then section.leftOffset = section.leftOffset + 22 else section.rightOffset = section.rightOffset + 22 end
+                -- Update offset
+                if side == "left" then
+                    section.leftOffset = section.leftOffset + 22
+                else
+                    section.rightOffset = section.rightOffset + 22
+                end
+
                 table.insert(elements, keybind)
                 return keybind
             end
 
-            -- COLORPICKER (FIXED: supports trackAccent to sync with library accent)
+            --============================================================--
+            --                      COLORPICKER                           --
+            --============================================================--
+
+            --- Creates a color picker
+            --- @param config table Configuration options
+            --- @return table The colorpicker object
             function section:ColorPicker(config)
                 config = config or {}
                 local pickerName = config.name or "Color"
@@ -1197,7 +2973,7 @@ function library:New(config)
                 local default = config.default or Color3.fromRGB(255, 255, 255)
                 local flag = config.flag
                 local callback = config.callback or function() end
-                local trackAccent = config.trackAccent or false  -- NEW: sync with accent
+                local trackAccent = config.trackAccent or false
 
                 local elements = side == "left" and section.leftElements or section.rightElements
                 local offset = side == "left" and section.leftOffset or section.rightOffset
@@ -1205,19 +2981,66 @@ function library:New(config)
                 local cpWidth = section.contentWidth - 24
 
                 local h, s, v = rgbToHsv(default.R * 255, default.G * 255, default.B * 255)
-                local colorpicker = {value = default, h = h, s = s, v = v, open = false, draggingSV = false, draggingH = false, side = side, yOffset = offset, objects = {}, pickerObjects = {}, blockArea = nil, trackAccent = trackAccent}
 
-                colorpicker.objects.label = create("Text", {Text = pickerName, Size = 13, Font = 2, Color = library.theme.dimtext, Outline = true, OutlineColor = Color3.new(0, 0, 0), Position = window.pos + Vector2.new(baseX, section.contentY + offset + 2), Visible = section.visible, ZIndex = 9})
+                local colorpicker = {
+                    value = trackAccent and library.accent or default,
+                    h = h,
+                    s = s,
+                    v = v,
+                    open = false,
+                    draggingSV = false,
+                    draggingH = false,
+                    side = side,
+                    yOffset = offset,
+                    objects = {},
+                    pickerObjects = {},
+                    blockArea = nil,
+                    trackAccent = trackAccent
+                }
+
+                -- Label
+                colorpicker.objects.label = createDrawing("Text", {
+                    Text = pickerName,
+                    Size = 13,
+                    Font = 2,
+                    Color = library.theme.dimtext,
+                    Outline = true,
+                    OutlineColor = Color3.new(0, 0, 0),
+                    Position = window.pos + Vector2.new(baseX, section.contentY + offset + 2),
+                    Visible = section.visible,
+                    ZIndex = 9
+                })
                 registerTheme(colorpicker.objects.label, "Color", "dimtext")
 
-                colorpicker.objects.preview = create("Square", {Size = Vector2.new(24, 14), Position = window.pos + Vector2.new(baseX + cpWidth - 26, section.contentY + offset + 1), Color = trackAccent and library.accent or default, Filled = true, Visible = section.visible, ZIndex = 9})
+                -- Preview box
+                colorpicker.objects.preview = createDrawing("Square", {
+                    Size = Vector2.new(24, 14),
+                    Position = window.pos + Vector2.new(baseX + cpWidth - 26, section.contentY + offset + 1),
+                    Color = trackAccent and library.accent or default,
+                    Filled = true,
+                    Visible = section.visible,
+                    ZIndex = 9
+                })
 
-                -- NEW: Register for accent tracking if trackAccent is enabled
+                -- Register for accent tracking if enabled
                 if trackAccent then
-                    table.insert(library.colorPickerPreviews, {obj = colorpicker.objects.preview, colorpicker = colorpicker, trackAccent = true})
+                    table.insert(library.colorPickerPreviews, {
+                        obj = colorpicker.objects.preview,
+                        colorpicker = colorpicker,
+                        trackAccent = true
+                    })
                 end
 
-                colorpicker.objects.previewOutline = create("Square", {Size = Vector2.new(24, 14), Position = window.pos + Vector2.new(baseX + cpWidth - 26, section.contentY + offset + 1), Color = library.theme.outline, Filled = false, Thickness = 1, Visible = section.visible, ZIndex = 10})
+                -- Preview outline
+                colorpicker.objects.previewOutline = createDrawing("Square", {
+                    Size = Vector2.new(24, 14),
+                    Position = window.pos + Vector2.new(baseX + cpWidth - 26, section.contentY + offset + 1),
+                    Color = library.theme.outline,
+                    Filled = false,
+                    Thickness = 1,
+                    Visible = section.visible,
+                    ZIndex = 10
+                })
                 registerTheme(colorpicker.objects.previewOutline, "Color", "outline")
 
                 colorpicker.baseX = baseX
@@ -1226,12 +3049,31 @@ function library:New(config)
 
                 function colorpicker:UpdatePositions()
                     local p = window.pos
-                    pcall(function() colorpicker.objects.label.Position = p + Vector2.new(colorpicker.baseX, colorpicker.baseY + 2) end)
-                    pcall(function() colorpicker.objects.preview.Position = p + Vector2.new(colorpicker.baseX + colorpicker.width - 26, colorpicker.baseY + 1) end)
-                    pcall(function() colorpicker.objects.previewOutline.Position = p + Vector2.new(colorpicker.baseX + colorpicker.width - 26, colorpicker.baseY + 1) end)
+                    pcall(function()
+                        colorpicker.objects.label.Position = p + Vector2.new(colorpicker.baseX, colorpicker.baseY + 2)
+                    end)
+                    pcall(function()
+                        colorpicker.objects.preview.Position = p + Vector2.new(
+                            colorpicker.baseX + colorpicker.width - 26,
+                            colorpicker.baseY + 1
+                        )
+                    end)
+                    pcall(function()
+                        colorpicker.objects.previewOutline.Position = p + Vector2.new(
+                            colorpicker.baseX + colorpicker.width - 26,
+                            colorpicker.baseY + 1
+                        )
+                    end)
                 end
 
-                function colorpicker:SetVisible(state) for _, obj in pairs(colorpicker.objects) do pcall(function() obj.Visible = state end) end if not state then colorpicker:Close() end end
+                function colorpicker:SetVisible(state)
+                    for _, obj in pairs(colorpicker.objects) do
+                        pcall(function() obj.Visible = state end)
+                    end
+                    if not state then
+                        colorpicker:Close()
+                    end
+                end
 
                 function colorpicker:Close()
                     colorpicker.open = false
@@ -1239,130 +3081,371 @@ function library:New(config)
                     colorpicker.draggingH = false
                     library.blockingInput = false
                     colorpicker.blockArea = nil
-                    for _, obj in pairs(colorpicker.pickerObjects) do pcall(function() obj:Remove() end) end
+
+                    for _, obj in pairs(colorpicker.pickerObjects) do
+                        pcall(function() obj:Remove() end)
+                    end
                     colorpicker.pickerObjects = {}
-                    if window.activeColorPicker == colorpicker then window.activeColorPicker = nil end
+
+                    if window.activeColorPicker == colorpicker then
+                        window.activeColorPicker = nil
+                    end
                 end
 
                 function colorpicker:Open()
-                    if colorpicker.open then colorpicker:Close() return end
+                    if colorpicker.open then
+                        colorpicker:Close()
+                        return
+                    end
+
                     window:ClosePopups()
                     colorpicker.open = true
                     window.activeColorPicker = colorpicker
                     library.blockingInput = true
+
                     local pos = colorpicker.objects.preview.Position
                     local pickerW, pickerH = 200, 180
-                    colorpicker.blockArea = {x = pos.X - pickerW + 24, y = pos.Y + 18, w = pickerW, h = pickerH}
-                    local bg = create("Square", {Size = Vector2.new(pickerW, pickerH), Position = Vector2.new(pos.X - pickerW + 24, pos.Y + 18), Color = library.theme.background, Filled = true, Visible = true, ZIndex = 60})
+                    colorpicker.blockArea = {
+                        x = pos.X - pickerW + 24,
+                        y = pos.Y + 18,
+                        w = pickerW,
+                        h = pickerH
+                    }
+
+                    -- Picker background
+                    local bg = createDrawing("Square", {
+                        Size = Vector2.new(pickerW, pickerH),
+                        Position = Vector2.new(pos.X - pickerW + 24, pos.Y + 18),
+                        Color = library.theme.background,
+                        Filled = true,
+                        Visible = true,
+                        ZIndex = 60
+                    })
                     table.insert(colorpicker.pickerObjects, bg)
-                    local outline = create("Square", {Size = Vector2.new(pickerW, pickerH), Position = Vector2.new(pos.X - pickerW + 24, pos.Y + 18), Color = library.theme.outline, Filled = false, Thickness = 1, Visible = true, ZIndex = 61})
+
+                    -- Picker outline
+                    local outline = createDrawing("Square", {
+                        Size = Vector2.new(pickerW, pickerH),
+                        Position = Vector2.new(pos.X - pickerW + 24, pos.Y + 18),
+                        Color = library.theme.outline,
+                        Filled = false,
+                        Thickness = 1,
+                        Visible = true,
+                        ZIndex = 61
+                    })
                     table.insert(colorpicker.pickerObjects, outline)
+
+                    -- Saturation/Value square
                     local svX = pos.X - pickerW + 34
                     local svY = pos.Y + 42
                     local svSize = 120
-                    local svWhite = create("Square", {Size = Vector2.new(svSize, svSize), Position = Vector2.new(svX, svY), Color = Color3.new(1, 1, 1), Filled = true, Visible = true, ZIndex = 62})
+
+                    -- White base
+                    local svWhite = createDrawing("Square", {
+                        Size = Vector2.new(svSize, svSize),
+                        Position = Vector2.new(svX, svY),
+                        Color = Color3.new(1, 1, 1),
+                        Filled = true,
+                        Visible = true,
+                        ZIndex = 62
+                    })
                     table.insert(colorpicker.pickerObjects, svWhite)
+
+                    -- Hue overlay
                     local r, g, b = hsvToRgb(colorpicker.h, 1, 1)
-                    local svHue = create("Square", {Size = Vector2.new(svSize, svSize), Position = Vector2.new(svX, svY), Color = Color3.fromRGB(r, g, b), Filled = true, Transparency = 0.5, Visible = true, ZIndex = 63})
+                    local svHue = createDrawing("Square", {
+                        Size = Vector2.new(svSize, svSize),
+                        Position = Vector2.new(svX, svY),
+                        Color = Color3.fromRGB(r, g, b),
+                        Filled = true,
+                        Transparency = 0.5,
+                        Visible = true,
+                        ZIndex = 63
+                    })
                     table.insert(colorpicker.pickerObjects, svHue)
                     colorpicker.svHue = svHue
+
+                    -- Black gradient overlay
                     for i = 0, svSize - 1, 4 do
                         local alpha = i / svSize
-                        local gradLine = create("Square", {Size = Vector2.new(svSize, 4), Position = Vector2.new(svX, svY + i), Color = Color3.new(0, 0, 0), Transparency = alpha, Filled = true, Visible = true, ZIndex = 64})
+                        local gradLine = createDrawing("Square", {
+                            Size = Vector2.new(svSize, 4),
+                            Position = Vector2.new(svX, svY + i),
+                            Color = Color3.new(0, 0, 0),
+                            Transparency = alpha,
+                            Filled = true,
+                            Visible = true,
+                            ZIndex = 64
+                        })
                         table.insert(colorpicker.pickerObjects, gradLine)
                     end
-                    local svOutline = create("Square", {Size = Vector2.new(svSize, svSize), Position = Vector2.new(svX, svY), Color = library.theme.outline, Filled = false, Thickness = 1, Visible = true, ZIndex = 65})
+
+                    -- SV outline
+                    local svOutline = createDrawing("Square", {
+                        Size = Vector2.new(svSize, svSize),
+                        Position = Vector2.new(svX, svY),
+                        Color = library.theme.outline,
+                        Filled = false,
+                        Thickness = 1,
+                        Visible = true,
+                        ZIndex = 65
+                    })
                     table.insert(colorpicker.pickerObjects, svOutline)
+
+                    -- SV cursor
                     local svCursorX = svX + colorpicker.s * svSize
                     local svCursorY = svY + (1 - colorpicker.v) * svSize
-                    local svCursor = create("Circle", {Radius = 6, Position = Vector2.new(svCursorX, svCursorY), Color = Color3.new(1, 1, 1), Filled = false, Thickness = 2, Visible = true, ZIndex = 66})
+                    local svCursor = createDrawing("Circle", {
+                        Radius = 6,
+                        Position = Vector2.new(svCursorX, svCursorY),
+                        Color = Color3.new(1, 1, 1),
+                        Filled = false,
+                        Thickness = 2,
+                        Visible = true,
+                        ZIndex = 66
+                    })
                     table.insert(colorpicker.pickerObjects, svCursor)
                     colorpicker.svCursor = svCursor
+
+                    -- Hue bar
                     local hueX = svX + svSize + 12
                     local hueY = svY
                     local hueW, hueH = 24, svSize
+
                     local hueSteps = 24
                     for i = 0, hueSteps - 1 do
                         local hueVal = i / hueSteps
                         local hr, hg, hb = hsvToRgb(hueVal, 1, 1)
-                        local hueStep = create("Square", {Size = Vector2.new(hueW, hueH / hueSteps + 1), Position = Vector2.new(hueX, hueY + i * (hueH / hueSteps)), Color = Color3.fromRGB(hr, hg, hb), Filled = true, Visible = true, ZIndex = 62})
+                        local hueStep = createDrawing("Square", {
+                            Size = Vector2.new(hueW, hueH / hueSteps + 1),
+                            Position = Vector2.new(hueX, hueY + i * (hueH / hueSteps)),
+                            Color = Color3.fromRGB(hr, hg, hb),
+                            Filled = true,
+                            Visible = true,
+                            ZIndex = 62
+                        })
                         table.insert(colorpicker.pickerObjects, hueStep)
                     end
-                    local hueOutline = create("Square", {Size = Vector2.new(hueW, hueH), Position = Vector2.new(hueX, hueY), Color = library.theme.outline, Filled = false, Thickness = 1, Visible = true, ZIndex = 65})
+
+                    -- Hue outline
+                    local hueOutline = createDrawing("Square", {
+                        Size = Vector2.new(hueW, hueH),
+                        Position = Vector2.new(hueX, hueY),
+                        Color = library.theme.outline,
+                        Filled = false,
+                        Thickness = 1,
+                        Visible = true,
+                        ZIndex = 65
+                    })
                     table.insert(colorpicker.pickerObjects, hueOutline)
+
+                    -- Hue cursor
                     local hueCursorY = hueY + colorpicker.h * hueH
-                    local hueCursor = create("Square", {Size = Vector2.new(hueW + 4, 4), Position = Vector2.new(hueX - 2, hueCursorY - 2), Color = Color3.new(1, 1, 1), Filled = false, Thickness = 2, Visible = true, ZIndex = 66})
+                    local hueCursor = createDrawing("Square", {
+                        Size = Vector2.new(hueW + 4, 4),
+                        Position = Vector2.new(hueX - 2, hueCursorY - 2),
+                        Color = Color3.new(1, 1, 1),
+                        Filled = false,
+                        Thickness = 2,
+                        Visible = true,
+                        ZIndex = 66
+                    })
                     table.insert(colorpicker.pickerObjects, hueCursor)
                     colorpicker.hueCursor = hueCursor
-                    local currentPreview = create("Square", {Size = Vector2.new(svSize + hueW + 12, 16), Position = Vector2.new(svX, svY + svSize + 12), Color = colorpicker.value, Filled = true, Visible = true, ZIndex = 62})
+
+                    -- Current color preview
+                    local currentPreview = createDrawing("Square", {
+                        Size = Vector2.new(svSize + hueW + 12, 16),
+                        Position = Vector2.new(svX, svY + svSize + 12),
+                        Color = colorpicker.value,
+                        Filled = true,
+                        Visible = true,
+                        ZIndex = 62
+                    })
                     table.insert(colorpicker.pickerObjects, currentPreview)
                     colorpicker.currentPreview = currentPreview
-                    colorpicker.svX = svX; colorpicker.svY = svY; colorpicker.svSize = svSize; colorpicker.hueX = hueX; colorpicker.hueY = hueY; colorpicker.hueW = hueW; colorpicker.hueH = hueH
+
+                    -- Store dimensions
+                    colorpicker.svX = svX
+                    colorpicker.svY = svY
+                    colorpicker.svSize = svSize
+                    colorpicker.hueX = hueX
+                    colorpicker.hueY = hueY
+                    colorpicker.hueW = hueW
+                    colorpicker.hueH = hueH
                 end
 
                 function colorpicker:UpdateColor()
                     local r, g, b = hsvToRgb(colorpicker.h, colorpicker.s, colorpicker.v)
                     colorpicker.value = Color3.fromRGB(r, g, b)
-                    pcall(function() colorpicker.objects.preview.Color = colorpicker.value end)
-                    if colorpicker.currentPreview then pcall(function() colorpicker.currentPreview.Color = colorpicker.value end) end
-                    if colorpicker.svHue then local hr, hg, hb = hsvToRgb(colorpicker.h, 1, 1); pcall(function() colorpicker.svHue.Color = Color3.fromRGB(hr, hg, hb) end) end
-                    if flag then library.flags[flag] = colorpicker.value end
+
+                    pcall(function()
+                        colorpicker.objects.preview.Color = colorpicker.value
+                    end)
+
+                    if colorpicker.currentPreview then
+                        pcall(function()
+                            colorpicker.currentPreview.Color = colorpicker.value
+                        end)
+                    end
+
+                    if colorpicker.svHue then
+                        local hr, hg, hb = hsvToRgb(colorpicker.h, 1, 1)
+                        pcall(function()
+                            colorpicker.svHue.Color = Color3.fromRGB(hr, hg, hb)
+                        end)
+                    end
+
+                    if flag then
+                        library.flags[flag] = colorpicker.value
+                    end
+
                     pcall(callback, colorpicker.value)
                 end
 
                 function colorpicker:Set(color)
                     colorpicker.value = color
-                    colorpicker.h, colorpicker.s, colorpicker.v = rgbToHsv(color.R * 255, color.G * 255, color.B * 255)
-                    pcall(function() colorpicker.objects.preview.Color = color end)
-                    if flag then library.flags[flag] = color end
+                    colorpicker.h, colorpicker.s, colorpicker.v = rgbToHsv(
+                        color.R * 255,
+                        color.G * 255,
+                        color.B * 255
+                    )
+
+                    pcall(function()
+                        colorpicker.objects.preview.Color = color
+                    end)
+
+                    if flag then
+                        library.flags[flag] = color
+                    end
+
                     pcall(callback, color)
                 end
-                function colorpicker:Get() return colorpicker.value end
 
-                table.insert(library.connections, UIS.InputBegan:Connect(function(input)
-                    if input.UserInputType == Enum.UserInputType.MouseButton1 and library.open and section.visible then
-                        local previewPos = colorpicker.objects.preview.Position
-                        if mouseOver(previewPos.X, previewPos.Y, 24, 14) then colorpicker:Open() return end
-                        if colorpicker.open then
-                            if mouseOver(colorpicker.svX, colorpicker.svY, colorpicker.svSize, colorpicker.svSize) then colorpicker.draggingSV = true return end
-                            if mouseOver(colorpicker.hueX, colorpicker.hueY, colorpicker.hueW, colorpicker.hueH) then colorpicker.draggingH = true return end
-                            if colorpicker.blockArea and not mouseOver(colorpicker.blockArea.x, colorpicker.blockArea.y, colorpicker.blockArea.w, colorpicker.blockArea.h) then colorpicker:Close() end
+                function colorpicker:Get()
+                    return colorpicker.value
+                end
+
+                -- Click handler
+                table.insert(library.connections, UserInputService.InputBegan:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                        if library.open and section.visible then
+                            local previewPos = colorpicker.objects.preview.Position
+
+                            -- Open picker
+                            if isMouseOver(previewPos.X, previewPos.Y, 24, 14) then
+                                colorpicker:Open()
+                                return
+                            end
+
+                            -- Handle picker interaction
+                            if colorpicker.open then
+                                if isMouseOver(colorpicker.svX, colorpicker.svY, colorpicker.svSize, colorpicker.svSize) then
+                                    colorpicker.draggingSV = true
+                                    return
+                                end
+
+                                if isMouseOver(colorpicker.hueX, colorpicker.hueY, colorpicker.hueW, colorpicker.hueH) then
+                                    colorpicker.draggingH = true
+                                    return
+                                end
+
+                                -- Close if clicked outside
+                                if colorpicker.blockArea then
+                                    if not isMouseOver(
+                                        colorpicker.blockArea.x,
+                                        colorpicker.blockArea.y,
+                                        colorpicker.blockArea.w,
+                                        colorpicker.blockArea.h
+                                    ) then
+                                        colorpicker:Close()
+                                    end
+                                end
+                            end
                         end
                     end
                 end))
 
-                table.insert(library.connections, UIS.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 then colorpicker.draggingSV = false; colorpicker.draggingH = false end end))
+                table.insert(library.connections, UserInputService.InputEnded:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                        colorpicker.draggingSV = false
+                        colorpicker.draggingH = false
+                    end
+                end))
 
-                table.insert(library.connections, RS.RenderStepped:Connect(function()
+                -- Dragging update
+                table.insert(library.connections, RunService.RenderStepped:Connect(function()
                     if colorpicker.open and library.open then
-                        local success, mouse = pcall(function() return UIS:GetMouseLocation() end)
+                        local success, mouse = pcall(function()
+                            return UserInputService:GetMouseLocation()
+                        end)
+
                         if success then
                             if colorpicker.draggingSV then
                                 local relX = math.clamp((mouse.X - colorpicker.svX) / colorpicker.svSize, 0, 1)
                                 local relY = math.clamp((mouse.Y - colorpicker.svY) / colorpicker.svSize, 0, 1)
-                                colorpicker.s = relX; colorpicker.v = 1 - relY
-                                if colorpicker.svCursor then pcall(function() colorpicker.svCursor.Position = Vector2.new(colorpicker.svX + relX * colorpicker.svSize, colorpicker.svY + relY * colorpicker.svSize) end) end
+                                colorpicker.s = relX
+                                colorpicker.v = 1 - relY
+
+                                if colorpicker.svCursor then
+                                    pcall(function()
+                                        colorpicker.svCursor.Position = Vector2.new(
+                                            colorpicker.svX + relX * colorpicker.svSize,
+                                            colorpicker.svY + relY * colorpicker.svSize
+                                        )
+                                    end)
+                                end
+
                                 colorpicker:UpdateColor()
                             end
+
                             if colorpicker.draggingH then
                                 local relY = math.clamp((mouse.Y - colorpicker.hueY) / colorpicker.hueH, 0, 1)
                                 colorpicker.h = relY
-                                if colorpicker.hueCursor then pcall(function() colorpicker.hueCursor.Position = Vector2.new(colorpicker.hueX - 2, colorpicker.hueY + relY * colorpicker.hueH - 2) end) end
+
+                                if colorpicker.hueCursor then
+                                    pcall(function()
+                                        colorpicker.hueCursor.Position = Vector2.new(
+                                            colorpicker.hueX - 2,
+                                            colorpicker.hueY + relY * colorpicker.hueH - 2
+                                        )
+                                    end)
+                                end
+
                                 colorpicker:UpdateColor()
                             end
                         end
                     end
                 end))
 
-                if flag then library.flags[flag] = trackAccent and library.accent or default library.pointers[flag] = colorpicker end
-                if not trackAccent then pcall(callback, default) end
+                -- Initialize
+                if flag then
+                    library.flags[flag] = trackAccent and library.accent or default
+                    library.pointers[flag] = colorpicker
+                end
 
-                if side == "left" then section.leftOffset = section.leftOffset + 22 else section.rightOffset = section.rightOffset + 22 end
+                if not trackAccent then
+                    pcall(callback, default)
+                end
+
+                -- Update offset
+                if side == "left" then
+                    section.leftOffset = section.leftOffset + 22
+                else
+                    section.rightOffset = section.rightOffset + 22
+                end
+
                 table.insert(elements, colorpicker)
                 return colorpicker
             end
 
-            -- TEXTBOX
+            --============================================================--
+            --                        TEXTBOX                             --
+            --============================================================--
+
+            --- Creates a text input box
+            --- @param config table Configuration options
+            --- @return table The textbox object
             function section:Textbox(config)
                 config = config or {}
                 local textboxName = config.name or "Textbox"
@@ -1377,60 +3460,211 @@ function library:New(config)
                 local baseX = side == "left" and (section.contentX + 12) or (section.rightX + 12)
                 local tbWidth = section.contentWidth - 24
 
-                local textbox = {value = default, focused = false, side = side, yOffset = offset, placeholder = placeholder, objects = {}}
+                local textbox = {
+                    value = default,
+                    focused = false,
+                    side = side,
+                    yOffset = offset,
+                    placeholder = placeholder,
+                    objects = {}
+                }
 
-                textbox.objects.label = create("Text", {Text = textboxName, Size = 13, Font = 2, Color = library.theme.dimtext, Outline = true, OutlineColor = Color3.new(0, 0, 0), Position = window.pos + Vector2.new(baseX, section.contentY + offset), Visible = section.visible, ZIndex = 9})
+                -- Label
+                textbox.objects.label = createDrawing("Text", {
+                    Text = textboxName,
+                    Size = 13,
+                    Font = 2,
+                    Color = library.theme.dimtext,
+                    Outline = true,
+                    OutlineColor = Color3.new(0, 0, 0),
+                    Position = window.pos + Vector2.new(baseX, section.contentY + offset),
+                    Visible = section.visible,
+                    ZIndex = 9
+                })
                 registerTheme(textbox.objects.label, "Color", "dimtext")
-                textbox.objects.outline = create("Square", {Size = Vector2.new(tbWidth, 22), Position = window.pos + Vector2.new(baseX, section.contentY + offset + 18), Color = library.theme.outline, Filled = true, Visible = section.visible, ZIndex = 9})
-                registerTheme(textbox.objects.outline, "Color", "outline")
-                textbox.objects.bg = create("Square", {Size = Vector2.new(tbWidth - 2, 20), Position = window.pos + Vector2.new(baseX + 1, section.contentY + offset + 19), Color = library.theme.elementbg, Filled = true, Visible = section.visible, ZIndex = 10})
-                registerTheme(textbox.objects.bg, "Color", "elementbg")
-                textbox.objects.text = create("Text", {Text = default ~= "" and default or placeholder, Size = 13, Font = 2, Color = default ~= "" and library.theme.text or library.theme.dimtext, Outline = true, OutlineColor = Color3.new(0, 0, 0), Position = window.pos + Vector2.new(baseX + 8, section.contentY + offset + 22), Visible = section.visible, ZIndex = 11})
 
-                textbox.baseX = baseX; textbox.baseY = section.contentY + offset; textbox.width = tbWidth
+                -- Box outline
+                textbox.objects.outline = createDrawing("Square", {
+                    Size = Vector2.new(tbWidth, 22),
+                    Position = window.pos + Vector2.new(baseX, section.contentY + offset + 18),
+                    Color = library.theme.outline,
+                    Filled = true,
+                    Visible = section.visible,
+                    ZIndex = 9
+                })
+                registerTheme(textbox.objects.outline, "Color", "outline")
+
+                -- Box background
+                textbox.objects.bg = createDrawing("Square", {
+                    Size = Vector2.new(tbWidth - 2, 20),
+                    Position = window.pos + Vector2.new(baseX + 1, section.contentY + offset + 19),
+                    Color = library.theme.elementbg,
+                    Filled = true,
+                    Visible = section.visible,
+                    ZIndex = 10
+                })
+                registerTheme(textbox.objects.bg, "Color", "elementbg")
+
+                -- Text
+                textbox.objects.text = createDrawing("Text", {
+                    Text = default ~= "" and default or placeholder,
+                    Size = 13,
+                    Font = 2,
+                    Color = default ~= "" and library.theme.text or library.theme.dimtext,
+                    Outline = true,
+                    OutlineColor = Color3.new(0, 0, 0),
+                    Position = window.pos + Vector2.new(baseX + 8, section.contentY + offset + 22),
+                    Visible = section.visible,
+                    ZIndex = 11
+                })
+
+                textbox.baseX = baseX
+                textbox.baseY = section.contentY + offset
+                textbox.width = tbWidth
 
                 function textbox:UpdatePositions()
                     local p = window.pos
-                    pcall(function() textbox.objects.label.Position = p + Vector2.new(textbox.baseX, textbox.baseY) end)
-                    pcall(function() textbox.objects.outline.Position = p + Vector2.new(textbox.baseX, textbox.baseY + 18) end)
-                    pcall(function() textbox.objects.bg.Position = p + Vector2.new(textbox.baseX + 1, textbox.baseY + 19) end)
-                    pcall(function() textbox.objects.text.Position = p + Vector2.new(textbox.baseX + 8, textbox.baseY + 22) end)
+                    pcall(function()
+                        textbox.objects.label.Position = p + Vector2.new(textbox.baseX, textbox.baseY)
+                    end)
+                    pcall(function()
+                        textbox.objects.outline.Position = p + Vector2.new(textbox.baseX, textbox.baseY + 18)
+                    end)
+                    pcall(function()
+                        textbox.objects.bg.Position = p + Vector2.new(textbox.baseX + 1, textbox.baseY + 19)
+                    end)
+                    pcall(function()
+                        textbox.objects.text.Position = p + Vector2.new(textbox.baseX + 8, textbox.baseY + 22)
+                    end)
                 end
 
-                function textbox:SetVisible(state) for _, obj in pairs(textbox.objects) do pcall(function() obj.Visible = state end) end end
-                function textbox:Set(value) textbox.value = value; pcall(function() textbox.objects.text.Text = value ~= "" and value or textbox.placeholder; textbox.objects.text.Color = value ~= "" and library.theme.text or library.theme.dimtext end); if flag then library.flags[flag] = value end; pcall(callback, value) end
-                function textbox:Get() return textbox.value end
-                function textbox:Focus() textbox.focused = true; pcall(function() textbox.objects.outline.Color = library.accent; textbox.objects.text.Text = textbox.value; textbox.objects.text.Color = library.theme.text end) end
-                function textbox:Unfocus() textbox.focused = false; pcall(function() textbox.objects.outline.Color = library.theme.outline end); if textbox.value == "" then pcall(function() textbox.objects.text.Text = textbox.placeholder; textbox.objects.text.Color = library.theme.dimtext end) end; pcall(callback, textbox.value) end
-
-                table.insert(library.connections, UIS.InputBegan:Connect(function(input)
-                    if input.UserInputType == Enum.UserInputType.MouseButton1 and library.open and section.visible then
-                        if library.blockingInput then return end
-                        local pos = textbox.objects.outline.Position
-                        if mouseOver(pos.X, pos.Y, textbox.width, 22) then textbox:Focus() return end
-                        if textbox.focused then textbox:Unfocus() end
+                function textbox:SetVisible(state)
+                    for _, obj in pairs(textbox.objects) do
+                        pcall(function() obj.Visible = state end)
                     end
+                end
+
+                function textbox:Set(value)
+                    textbox.value = value
+
+                    pcall(function()
+                        textbox.objects.text.Text = value ~= "" and value or textbox.placeholder
+                        textbox.objects.text.Color = value ~= ""
+                            and library.theme.text
+                            or library.theme.dimtext
+                    end)
+
+                    if flag then
+                        library.flags[flag] = value
+                    end
+
+                    pcall(callback, value)
+                end
+
+                function textbox:Get()
+                    return textbox.value
+                end
+
+                function textbox:Focus()
+                    textbox.focused = true
+                    pcall(function()
+                        textbox.objects.outline.Color = library.accent
+                        textbox.objects.text.Text = textbox.value
+                        textbox.objects.text.Color = library.theme.text
+                    end)
+                end
+
+                function textbox:Unfocus()
+                    textbox.focused = false
+                    pcall(function()
+                        textbox.objects.outline.Color = library.theme.outline
+                    end)
+
+                    if textbox.value == "" then
+                        pcall(function()
+                            textbox.objects.text.Text = textbox.placeholder
+                            textbox.objects.text.Color = library.theme.dimtext
+                        end)
+                    end
+
+                    pcall(callback, textbox.value)
+                end
+
+                -- Input handler
+                table.insert(library.connections, UserInputService.InputBegan:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                        if library.open and section.visible and not library.blockingInput then
+                            local pos = textbox.objects.outline.Position
+
+                            if isMouseOver(pos.X, pos.Y, textbox.width, 22) then
+                                textbox:Focus()
+                                return
+                            end
+
+                            if textbox.focused then
+                                textbox:Unfocus()
+                            end
+                        end
+                    end
+
+                    -- Handle typing
                     if textbox.focused and input.UserInputType == Enum.UserInputType.Keyboard then
-                        if input.KeyCode == Enum.KeyCode.Return or input.KeyCode == Enum.KeyCode.Escape then textbox:Unfocus()
-                        elseif input.KeyCode == Enum.KeyCode.Backspace then textbox.value = textbox.value:sub(1, -2); pcall(function() textbox.objects.text.Text = textbox.value end)
-                        elseif input.KeyCode == Enum.KeyCode.Space then textbox.value = textbox.value .. " "; pcall(function() textbox.objects.text.Text = textbox.value end)
+                        if input.KeyCode == Enum.KeyCode.Return or input.KeyCode == Enum.KeyCode.Escape then
+                            textbox:Unfocus()
+                        elseif input.KeyCode == Enum.KeyCode.Backspace then
+                            textbox.value = textbox.value:sub(1, -2)
+                            pcall(function()
+                                textbox.objects.text.Text = textbox.value
+                            end)
+                        elseif input.KeyCode == Enum.KeyCode.Space then
+                            textbox.value = textbox.value .. " "
+                            pcall(function()
+                                textbox.objects.text.Text = textbox.value
+                            end)
                         elseif #input.KeyCode.Name == 1 then
                             local char = input.KeyCode.Name
-                            if UIS:IsKeyDown(Enum.KeyCode.LeftShift) or UIS:IsKeyDown(Enum.KeyCode.RightShift) then char = char:upper() else char = char:lower() end
-                            textbox.value = textbox.value .. char; pcall(function() textbox.objects.text.Text = textbox.value end)
+                            if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) or
+                               UserInputService:IsKeyDown(Enum.KeyCode.RightShift) then
+                                char = char:upper()
+                            else
+                                char = char:lower()
+                            end
+                            textbox.value = textbox.value .. char
+                            pcall(function()
+                                textbox.objects.text.Text = textbox.value
+                            end)
                         end
-                        if flag then library.flags[flag] = textbox.value end
+
+                        if flag then
+                            library.flags[flag] = textbox.value
+                        end
                     end
                 end))
 
-                if flag then library.flags[flag] = default library.pointers[flag] = textbox end
+                -- Initialize
+                if flag then
+                    library.flags[flag] = default
+                    library.pointers[flag] = textbox
+                end
 
-                if side == "left" then section.leftOffset = section.leftOffset + 46 else section.rightOffset = section.rightOffset + 46 end
+                -- Update offset
+                if side == "left" then
+                    section.leftOffset = section.leftOffset + 46
+                else
+                    section.rightOffset = section.rightOffset + 46
+                end
+
                 table.insert(elements, textbox)
                 return textbox
             end
 
-            -- LABEL
+            --============================================================--
+            --                          LABEL                             --
+            --============================================================--
+
+            --- Creates a text label
+            --- @param config table Configuration options
+            --- @return table The label object
             function section:Label(config)
                 config = config or {}
                 local labelText = config.text or "Label"
@@ -1440,26 +3674,67 @@ function library:New(config)
                 local offset = side == "left" and section.leftOffset or section.rightOffset
                 local baseX = side == "left" and (section.contentX + 12) or (section.rightX + 12)
 
-                local label = {side = side, yOffset = offset, objects = {}}
-                label.objects.text = create("Text", {Text = labelText, Size = 13, Font = 2, Color = library.theme.dimtext, Outline = true, OutlineColor = Color3.new(0, 0, 0), Position = window.pos + Vector2.new(baseX, section.contentY + offset + 2), Visible = section.visible, ZIndex = 9})
+                local label = {
+                    side = side,
+                    yOffset = offset,
+                    objects = {}
+                }
+
+                -- Text
+                label.objects.text = createDrawing("Text", {
+                    Text = labelText,
+                    Size = 13,
+                    Font = 2,
+                    Color = library.theme.dimtext,
+                    Outline = true,
+                    OutlineColor = Color3.new(0, 0, 0),
+                    Position = window.pos + Vector2.new(baseX, section.contentY + offset + 2),
+                    Visible = section.visible,
+                    ZIndex = 9
+                })
                 registerTheme(label.objects.text, "Color", "dimtext")
 
-                label.baseX = baseX; label.baseY = section.contentY + offset
+                label.baseX = baseX
+                label.baseY = section.contentY + offset
 
-                function label:UpdatePositions() pcall(function() label.objects.text.Position = window.pos + Vector2.new(label.baseX, label.baseY + 2) end) end
-                function label:SetVisible(state) pcall(function() label.objects.text.Visible = state end) end
-                function label:Set(text) pcall(function() label.objects.text.Text = text end) end
+                function label:UpdatePositions()
+                    pcall(function()
+                        label.objects.text.Position = window.pos + Vector2.new(label.baseX, label.baseY + 2)
+                    end)
+                end
 
-                if side == "left" then section.leftOffset = section.leftOffset + 20 else section.rightOffset = section.rightOffset + 20 end
+                function label:SetVisible(state)
+                    pcall(function()
+                        label.objects.text.Visible = state
+                    end)
+                end
+
+                function label:Set(text)
+                    pcall(function()
+                        label.objects.text.Text = text
+                    end)
+                end
+
+                -- Update offset
+                if side == "left" then
+                    section.leftOffset = section.leftOffset + 20
+                else
+                    section.rightOffset = section.rightOffset + 20
+                end
+
                 table.insert(elements, label)
                 return label
             end
 
-            table.insert(library.connections, UIS.InputBegan:Connect(function(input)
-                if input.UserInputType == Enum.UserInputType.MouseButton1 and library.open and page.visible then
-                    if library.blockingInput then return end
-                    local pos = sectionBtn.objects.text.Position
-                    if mouseOver(pos.X - 10, pos.Y - 4, 110, 22) then section:Show() end
+            -- Section button click handler
+            table.insert(library.connections, UserInputService.InputBegan:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                    if library.open and page.visible and not library.blockingInput then
+                        local pos = sectionBtn.objects.text.Position
+                        if isMouseOver(pos.X - 10, pos.Y - 4, 110, 22) then
+                            section:Show()
+                        end
+                    end
                 end
             end))
 
@@ -1471,60 +3746,152 @@ function library:New(config)
         return page
     end
 
+    --========================================================================--
+    --                           INITIALIZATION                               --
+    --========================================================================--
+
+    --- Initializes the window and sets up tabs
     function window:Init()
+        -- Calculate tab positions
         local totalTabWidth = 0
-        for _, page in ipairs(window.pages) do totalTabWidth = totalTabWidth + page.tabWidth + 4 end
+        for _, page in ipairs(window.pages) do
+            totalTabWidth = totalTabWidth + page.tabWidth + 4
+        end
+
         local startX = sizeX - totalTabWidth - 6
         local tabX = startX
+
         for _, page in ipairs(window.pages) do
             page.tabX = tabX
-            pcall(function() page.objects.tabBg.Position = window.pos + Vector2.new(tabX, 4); page.objects.tabBg.Size = Vector2.new(page.tabWidth, 21) end)
-            pcall(function() page.objects.tabAccent.Position = window.pos + Vector2.new(tabX + 2, 5); page.objects.tabAccent.Size = Vector2.new(page.tabWidth - 4, 2) end)
-            pcall(function() page.objects.tabText.Position = window.pos + Vector2.new(tabX + 7, 8) end)
+
+            pcall(function()
+                page.objects.tabBg.Position = window.pos + Vector2.new(tabX, 4)
+                page.objects.tabBg.Size = Vector2.new(page.tabWidth, 21)
+            end)
+            pcall(function()
+                page.objects.tabAccent.Position = window.pos + Vector2.new(tabX + 2, 5)
+                page.objects.tabAccent.Size = Vector2.new(page.tabWidth - 4, 2)
+            end)
+            pcall(function()
+                page.objects.tabText.Position = window.pos + Vector2.new(tabX + 7, 8)
+            end)
+
             tabX = tabX + page.tabWidth + 4
         end
-        if window.pages[1] then window.pages[1]:Show() window.currentPage = window.pages[1] end
-        table.insert(library.connections, UIS.InputBegan:Connect(function(input)
+
+        -- Show first page
+        if window.pages[1] then
+            window.pages[1]:Show()
+            window.currentPage = window.pages[1]
+        end
+
+        -- Tab click handler
+        table.insert(library.connections, UserInputService.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.MouseButton1 and library.open then
                 if library.blockingInput then return end
+
                 for _, page in ipairs(window.pages) do
                     local tabPos = window.pos + Vector2.new(page.tabX, 4)
-                    if mouseOver(tabPos.X, tabPos.Y, page.tabWidth, 21) then page:Show() return end
+                    if isMouseOver(tabPos.X, tabPos.Y, page.tabWidth, 21) then
+                        page:Show()
+                        return
+                    end
                 end
             end
         end))
     end
 
-    table.insert(library.connections, UIS.InputBegan:Connect(function(input)
+    --========================================================================--
+    --                             DRAGGING                                   --
+    --========================================================================--
+
+    -- Start dragging
+    table.insert(library.connections, UserInputService.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 and library.open then
             local pos = window.objects.topbar.Position
-            if mouseOver(pos.X, pos.Y, sizeX - 4, 24) then
+            if isMouseOver(pos.X, pos.Y, sizeX - 4, 24) then
                 window.dragging = true
-                local success, mouse = pcall(function() return UIS:GetMouseLocation() end)
-                if success then window.dragOffset = Vector2.new(mouse.X - window.pos.X, mouse.Y - window.pos.Y) end
+
+                local success, mouse = pcall(function()
+                    return UserInputService:GetMouseLocation()
+                end)
+
+                if success then
+                    window.dragOffset = Vector2.new(
+                        mouse.X - window.pos.X,
+                        mouse.Y - window.pos.Y
+                    )
+                end
             end
         end
     end))
-    table.insert(library.connections, UIS.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 then window.dragging = false end end))
-    table.insert(library.connections, RS.RenderStepped:Connect(function()
-        if window.dragging and library.open then
-            local success, mouse = pcall(function() return UIS:GetMouseLocation() end)
-            if success then window.pos = Vector2.new(mouse.X - window.dragOffset.X, mouse.Y - window.dragOffset.Y); window:UpdatePositions() end
+
+    -- Stop dragging
+    table.insert(library.connections, UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            window.dragging = false
         end
     end))
 
-    table.insert(library.connections, UIS.InputBegan:Connect(function(input) if input.KeyCode == library.menuKeybind then window:Toggle() end end))
+    -- Update position while dragging
+    table.insert(library.connections, RunService.RenderStepped:Connect(function()
+        if window.dragging and library.open then
+            local success, mouse = pcall(function()
+                return UserInputService:GetMouseLocation()
+            end)
 
+            if success then
+                window.pos = Vector2.new(
+                    mouse.X - window.dragOffset.X,
+                    mouse.Y - window.dragOffset.Y
+                )
+                window:UpdatePositions()
+            end
+        end
+    end))
+
+    --========================================================================--
+    --                          MENU TOGGLE                                   --
+    --========================================================================--
+
+    table.insert(library.connections, UserInputService.InputBegan:Connect(function(input)
+        if input.KeyCode == library.menuKeybind then
+            window:Toggle()
+        end
+    end))
+
+    --========================================================================--
+    --                             UNLOAD                                     --
+    --========================================================================--
+
+    --- Unloads the library and cleans up all resources
     function window:Unload()
-        for _, conn in pairs(library.connections) do pcall(function() conn:Disconnect() end) end
+        -- Disconnect all connections
+        for _, conn in pairs(library.connections) do
+            pcall(function()
+                conn:Disconnect()
+            end)
+        end
         library.connections = {}
-        for _, obj in pairs(library.drawings) do pcall(function() obj:Remove() end) end
+
+        -- Remove all drawings
+        for _, obj in pairs(library.drawings) do
+            pcall(function()
+                obj:Remove()
+            end)
+        end
         library.drawings = {}
+
+        -- Clear watermark
         library.watermark.objects = {}
         library.watermark._initialized = false
+
+        -- Clear keybind list
         library.keybindList.objects = {}
         library.keybindList.items = {}
         library.keybindList._initialized = false
+
+        -- Clear all storage
         library.flags = {}
         library.pointers = {}
         library.notifications = {}
@@ -1534,11 +3901,22 @@ function library:New(config)
         library.toggleObjects = {}
         library.colorPickerPreviews = {}
         library.windows = {}
-        library:Notify({title = "NexusLib", message = "Unloaded successfully", type = "success", duration = 2})
+
+        -- Confirmation notification (may not show if already unloaded)
+        library:Notify({
+            title = "NexusLib",
+            message = "Unloaded successfully",
+            type = "success",
+            duration = 2
+        })
     end
 
     table.insert(library.windows, window)
     return window
 end
+
+--============================================================================--
+--                              RETURN LIBRARY                                --
+--============================================================================--
 
 return library
