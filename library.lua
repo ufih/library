@@ -1,5 +1,5 @@
 --[[
-    GHack UI Framework - Roblox Luau Port
+    GHack UI Framework - Roblox Luau Port (FIXED)
     Accurate recreation of GMod GHack menu styling
     
     Usage:
@@ -33,48 +33,40 @@ Library.Debug = {
     GUI = nil,
 }
 
--- Configuration (EXACT GHack colors from menu.lua)
+-- Configuration (EXACT GHack colors)
 Library.Config = {
     -- Main accent color (pink/magenta)
     HighlightColor = Color3.fromRGB(255, 0, 151),
     
     -- Background colors
     MainBackground = Color3.fromRGB(30, 30, 30),
-    PanelBackground = Color3.fromRGB(40, 40, 40),
-    ContentBackground = Color3.fromRGB(25, 25, 25),
+    PanelBackground = Color3.fromRGB(38, 38, 38),
+    ContentBackground = Color3.fromRGB(22, 22, 22),
     ControlBackground = Color3.fromRGB(41, 41, 41),
-    HoverBackground = Color3.fromRGB(50, 50, 50),
+    ControlBackgroundAlt = Color3.fromRGB(35, 35, 35),
+    HoverBackground = Color3.fromRGB(55, 55, 55),
     
     -- Border colors (exact from GHack)
     OuterBorder = Color3.fromRGB(29, 29, 29),
     InnerBorder = Color3.fromRGB(19, 19, 19),
-    DarkBorder = Color3.fromRGB(20, 20, 20),
-    LightBorder = Color3.fromRGB(40, 40, 40),
+    PanelBorder = Color3.fromRGB(45, 45, 45),
     
     -- Text colors
     TextColor = Color3.fromRGB(255, 255, 255),
     RiskTextColor = Color3.fromRGB(220, 220, 120),
-    DimTextColor = Color3.fromRGB(199, 199, 199),
-    SubTabInactive = Color3.fromRGB(230, 230, 230),
+    DimTextColor = Color3.fromRGB(180, 180, 180),
     
     -- Dimensions
     WindowSizeX = 550,
     WindowSizeY = 400,
-    MinSizeX = 550,
-    MinSizeY = 400,
     TabHeight = 22,
-    LeftAreaPadding = 120,
-    Bezel = 3,
+    LeftAreaPadding = 115,
+    PanelWidth = 200,
     
-    -- Animation
-    FadeTime = 0.25,
-    TabSwitchTime = 0.20,
-    
-    -- Font (Tahoma equivalent in Roblox)
-    Font = Enum.Font.Code, -- Closest to Tahoma
+    -- Font
+    Font = Enum.Font.Code,
     FontBold = Enum.Font.GothamBold,
     FontSize = 13,
-    FontSizeTiny = 10,
 }
 
 -- Utility Functions
@@ -108,50 +100,8 @@ local function FormatTime(seconds)
     return string.format("%02d:%02d.%03d", mins, secs, ms)
 end
 
--- Create gradient frame (simulates GMod gradient materials)
-local function CreateGradient(parent, direction, transparency)
-    local gradient = Create("UIGradient", {
-        Transparency = NumberSequence.new({
-            NumberSequenceKeypoint.new(0, transparency or 0),
-            NumberSequenceKeypoint.new(1, 0.5)
-        }),
-        Rotation = direction == "down" and 90 or (direction == "up" and -90 or 0),
-        Parent = parent
-    })
-    return gradient
-end
-
--- Create the double-border box style from GHack
-local function CreateOutlinedBox(parent, size, position, bgColor)
-    local outer = Create("Frame", {
-        Size = size,
-        Position = position,
-        BackgroundColor3 = Library.Config.OuterBorder,
-        BorderSizePixel = 0,
-        Parent = parent
-    })
-    
-    local inner = Create("Frame", {
-        Size = UDim2.new(1, -2, 1, -2),
-        Position = UDim2.new(0, 1, 0, 1),
-        BackgroundColor3 = Library.Config.InnerBorder,
-        BorderSizePixel = 0,
-        Parent = outer
-    })
-    
-    local content = Create("Frame", {
-        Size = UDim2.new(1, -2, 1, -2),
-        Position = UDim2.new(0, 1, 0, 1),
-        BackgroundColor3 = bgColor or Library.Config.ControlBackground,
-        BorderSizePixel = 0,
-        Parent = inner
-    })
-    
-    return outer, content
-end
-
 -- Debug logging
-function Library:Log(level, source, message, data)
+function Library:Log(level, source, message)
     local timestamp = os.clock() - self.Debug.StartTime
     local logEntry = {
         timestamp = timestamp,
@@ -170,6 +120,10 @@ function Library:Log(level, source, message, data)
         table.insert(self.Debug.EventLogs, logEntry)
     elseif level == "error" then
         table.insert(self.Debug.CallbackErrors, logEntry)
+    end
+    
+    if self.Debug.Enabled and self.UpdateDebugGUI then
+        self:UpdateDebugGUI()
     end
 end
 
@@ -191,7 +145,6 @@ function Library:CreateWindow(title)
     self.Visible = false
     self.Tabs = {}
     self.ActiveTab = 1
-    self.PreviousTab = 1
     self.Dragging = false
     self.Library = Library
     
@@ -210,29 +163,22 @@ function Library:CreateWindow(title)
         self.ScreenGui.Parent = Player:WaitForChild("PlayerGui")
     end
     
-    -- Main Window Frame with bezel
+    -- Main Window Frame
     self.MainFrame = Create("Frame", {
         Name = "MainWindow",
-        Size = UDim2.new(0, Library.Config.WindowSizeX + Library.Config.Bezel * 2, 0, Library.Config.WindowSizeY + Library.Config.Bezel * 2),
-        Position = UDim2.new(0.5, -(Library.Config.WindowSizeX + Library.Config.Bezel * 2)/2, 0.5, -(Library.Config.WindowSizeY + Library.Config.Bezel * 2)/2),
-        BackgroundColor3 = Library.Config.DarkBorder,
+        Size = UDim2.new(0, Library.Config.WindowSizeX, 0, Library.Config.WindowSizeY),
+        Position = UDim2.new(0.5, -Library.Config.WindowSizeX/2, 0.5, -Library.Config.WindowSizeY/2),
+        BackgroundColor3 = Library.Config.OuterBorder,
         BorderSizePixel = 0,
         Visible = false,
         Parent = self.ScreenGui
     })
     
-    -- Outer border
-    Create("UIStroke", {
-        Color = Library.Config.DarkBorder,
-        Thickness = 1,
-        Parent = self.MainFrame
-    })
-    
-    -- Inner frame
-    local innerFrame = Create("Frame", {
+    -- Inner border frame
+    local innerBorder = Create("Frame", {
         Size = UDim2.new(1, -2, 1, -2),
         Position = UDim2.new(0, 1, 0, 1),
-        BackgroundColor3 = Library.Config.LightBorder,
+        BackgroundColor3 = Library.Config.PanelBorder,
         BorderSizePixel = 0,
         Parent = self.MainFrame
     })
@@ -243,10 +189,10 @@ function Library:CreateWindow(title)
         Position = UDim2.new(0, 1, 0, 1),
         BackgroundColor3 = Library.Config.MainBackground,
         BorderSizePixel = 0,
-        Parent = innerFrame
+        Parent = innerBorder
     })
     
-    -- Title Bar (tabs area)
+    -- Title Bar
     self.TitleBar = Create("Frame", {
         Name = "TitleBar",
         Size = UDim2.new(1, 0, 0, Library.Config.TabHeight),
@@ -255,20 +201,19 @@ function Library:CreateWindow(title)
         Parent = self.ContentFrame
     })
     
-    -- Title bar bottom line
+    -- Bottom border of title bar
     Create("Frame", {
         Size = UDim2.new(1, 0, 0, 1),
         Position = UDim2.new(0, 0, 1, 0),
-        BackgroundColor3 = Library.Config.LightBorder,
+        BackgroundColor3 = Library.Config.PanelBorder,
         BorderSizePixel = 0,
         Parent = self.TitleBar
     })
     
-    -- Title "GHACK OT" in pink
+    -- Title "GHACK OT"
     self.TitleLabel = Create("TextLabel", {
-        Name = "Title",
-        Size = UDim2.new(0, 100, 1, 0),
-        Position = UDim2.new(0, 5, 0, 0),
+        Size = UDim2.new(0, 90, 1, 0),
+        Position = UDim2.new(0, 8, 0, 0),
         BackgroundTransparency = 1,
         Text = self.Title,
         TextColor3 = Library.Config.HighlightColor,
@@ -278,7 +223,7 @@ function Library:CreateWindow(title)
         Parent = self.TitleBar
     })
     
-    -- Tab Container (right side of title bar)
+    -- Tab Container
     self.TabContainer = Create("Frame", {
         Name = "TabContainer",
         Size = UDim2.new(1, -100, 1, 0),
@@ -292,7 +237,7 @@ function Library:CreateWindow(title)
         HorizontalAlignment = Enum.HorizontalAlignment.Right,
         VerticalAlignment = Enum.VerticalAlignment.Center,
         SortOrder = Enum.SortOrder.LayoutOrder,
-        Padding = UDim.new(0, 12),
+        Padding = UDim.new(0, 15),
         Parent = self.TabContainer
     })
     
@@ -301,30 +246,30 @@ function Library:CreateWindow(title)
         Parent = self.TabContainer
     })
     
-    -- Left Panel (SubTabs area)
+    -- Left Panel (SubTabs)
     self.LeftPanel = Create("Frame", {
         Name = "LeftPanel",
-        Size = UDim2.new(0, Library.Config.LeftAreaPadding - 3, 1, -Library.Config.TabHeight - 1),
+        Size = UDim2.new(0, Library.Config.LeftAreaPadding, 1, -Library.Config.TabHeight - 1),
         Position = UDim2.new(0, 0, 0, Library.Config.TabHeight + 1),
         BackgroundColor3 = Library.Config.MainBackground,
         BorderSizePixel = 0,
         Parent = self.ContentFrame
     })
     
-    -- Left panel separator
+    -- Left panel right border
     Create("Frame", {
         Size = UDim2.new(0, 1, 1, 0),
         Position = UDim2.new(1, 0, 0, 0),
-        BackgroundColor3 = Library.Config.LightBorder,
+        BackgroundColor3 = Library.Config.PanelBorder,
         BorderSizePixel = 0,
         Parent = self.LeftPanel
     })
     
-    -- Content Area (right side, darker)
+    -- Content Area
     self.ContentArea = Create("Frame", {
         Name = "ContentArea",
-        Size = UDim2.new(1, -Library.Config.LeftAreaPadding, 1, -Library.Config.TabHeight - 1),
-        Position = UDim2.new(0, Library.Config.LeftAreaPadding, 0, Library.Config.TabHeight + 1),
+        Size = UDim2.new(1, -Library.Config.LeftAreaPadding - 1, 1, -Library.Config.TabHeight - 1),
+        Position = UDim2.new(0, Library.Config.LeftAreaPadding + 1, 0, Library.Config.TabHeight + 1),
         BackgroundColor3 = Library.Config.ContentBackground,
         BorderSizePixel = 0,
         ClipsDescendants = true,
@@ -334,7 +279,7 @@ function Library:CreateWindow(title)
     -- Setup dragging
     self:SetupDragging()
     
-    -- Toggle keybind (Insert like GMod)
+    -- Toggle keybind
     UserInputService.InputBegan:Connect(function(input, processed)
         if processed then return end
         if input.KeyCode == Enum.KeyCode.Insert or input.KeyCode == Enum.KeyCode.RightShift then
@@ -381,9 +326,10 @@ function Window:Toggle()
     if self.Visible then
         self.MainFrame.Visible = true
         self.MainFrame.BackgroundTransparency = 1
-        Tween(self.MainFrame, {BackgroundTransparency = 0}, Library.Config.FadeTime)
+        Tween(self.MainFrame, {BackgroundTransparency = 0}, Library.Config.FadeTime or 0.25)
     else
-        Tween(self.MainFrame, {BackgroundTransparency = 1}, Library.Config.FadeTime).Completed:Connect(function()
+        local tween = Tween(self.MainFrame, {BackgroundTransparency = 1}, Library.Config.FadeTime or 0.25)
+        tween.Completed:Connect(function()
             self.MainFrame.Visible = false
         end)
     end
@@ -400,7 +346,7 @@ function Window:CreateTab(name)
     tab.Index = #self.Tabs + 1
     tab.Library = Library
     
-    -- Tab Button (text only, like GMod)
+    -- Tab Button
     tab.Button = Create("TextButton", {
         Name = name,
         Size = UDim2.new(0, 0, 0, Library.Config.TabHeight - 4),
@@ -414,19 +360,9 @@ function Window:CreateTab(name)
         Parent = self.TabContainer
     })
     
-    -- Active indicator line (pink line under active tab)
-    tab.ActiveLine = Create("Frame", {
-        Size = UDim2.new(1, 0, 0, 2),
-        Position = UDim2.new(0, 0, 1, 2),
-        BackgroundColor3 = Library.Config.HighlightColor,
-        BorderSizePixel = 0,
-        Visible = tab.Index == 1,
-        Parent = tab.Button
-    })
-    
     Create("UIPadding", {
-        PaddingLeft = UDim.new(0, 4),
-        PaddingRight = UDim.new(0, 4),
+        PaddingLeft = UDim.new(0, 2),
+        PaddingRight = UDim.new(0, 2),
         Parent = tab.Button
     })
     
@@ -445,13 +381,13 @@ function Window:CreateTab(name)
     
     Create("UIListLayout", {
         FillDirection = Enum.FillDirection.Vertical,
-        Padding = UDim.new(0, 4),
+        Padding = UDim.new(0, 2),
         Parent = tab.SubTabContainer
     })
     
     Create("UIPadding", {
-        PaddingTop = UDim.new(0, 10),
-        PaddingLeft = UDim.new(0, 12),
+        PaddingTop = UDim.new(0, 8),
+        PaddingLeft = UDim.new(0, 10),
         PaddingRight = UDim.new(0, 8),
         Parent = tab.SubTabContainer
     })
@@ -481,8 +417,7 @@ function Window:CreateTab(name)
             Size = UDim2.new(1, -5, 0, 16),
             BackgroundTransparency = 1,
             Text = subName,
-            TextColor3 = subtab.Index == 1 and Library.Config.HighlightColor or Color3.fromRGB(230, 230, 230),
-            TextTransparency = subtab.Index == 1 and 0 or 0.4,
+            TextColor3 = subtab.Index == 1 and Library.Config.HighlightColor or Library.Config.DimTextColor,
             Font = Library.Config.Font,
             TextSize = Library.Config.FontSize,
             TextXAlignment = Enum.TextXAlignment.Left,
@@ -492,8 +427,8 @@ function Window:CreateTab(name)
         -- Content ScrollingFrame
         subtab.Content = Create("ScrollingFrame", {
             Name = subName .. "_Content",
-            Size = UDim2.new(1, -8, 1, -8),
-            Position = UDim2.new(0, 4, 0, 4),
+            Size = UDim2.new(1, -6, 1, -6),
+            Position = UDim2.new(0, 3, 0, 3),
             BackgroundTransparency = 1,
             ScrollBarThickness = 4,
             ScrollBarImageColor3 = Library.Config.HighlightColor,
@@ -503,19 +438,20 @@ function Window:CreateTab(name)
             Parent = self.ContentFrame
         })
         
-        Create("UIGridLayout", {
-            CellSize = UDim2.new(0.5, -6, 0, 0),
-            CellPadding = UDim2.new(0, 8, 0, 8),
+        Create("UIListLayout", {
             FillDirection = Enum.FillDirection.Horizontal,
-            FillDirectionMaxCells = 2,
-            SortOrder = Enum.SortOrder.LayoutOrder,
+            HorizontalAlignment = Enum.HorizontalAlignment.Left,
+            VerticalAlignment = Enum.VerticalAlignment.Top,
+            Padding = UDim.new(0, 8),
+            Wraps = true,
             Parent = subtab.Content
         })
         
         Create("UIPadding", {
-            PaddingTop = UDim.new(0, 4),
-            PaddingLeft = UDim.new(0, 4),
-            PaddingRight = UDim.new(0, 4),
+            PaddingTop = UDim.new(0, 6),
+            PaddingLeft = UDim.new(0, 6),
+            PaddingRight = UDim.new(0, 6),
+            PaddingBottom = UDim.new(0, 6),
             Parent = subtab.Content
         })
         
@@ -529,12 +465,15 @@ function Window:CreateTab(name)
             section.Controls = {}
             section.Index = #self.Sections + 1
             
-            -- Panel Frame (GHack style with gradient border)
+            -- Calculate panel width (roughly half the content area minus padding)
+            local panelWidth = Library.Config.PanelWidth
+            
+            -- Main Panel Frame with proper borders
             section.Frame = Create("Frame", {
                 Name = sectionName,
-                Size = UDim2.new(0.5, -6, 0, 0),
+                Size = UDim2.new(0, panelWidth, 0, 0),
                 AutomaticSize = Enum.AutomaticSize.Y,
-                BackgroundColor3 = Library.Config.DarkBorder,
+                BackgroundColor3 = Library.Config.OuterBorder,
                 BorderSizePixel = 0,
                 LayoutOrder = section.Index,
                 Parent = self.Content
@@ -542,20 +481,21 @@ function Window:CreateTab(name)
             
             -- Inner border
             local innerBorder = Create("Frame", {
+                Name = "InnerBorder",
                 Size = UDim2.new(1, -2, 1, -2),
                 Position = UDim2.new(0, 1, 0, 1),
-                BackgroundColor3 = Library.Config.LightBorder,
+                BackgroundColor3 = Library.Config.PanelBorder,
                 BorderSizePixel = 0,
                 Parent = section.Frame
             })
             
-            -- Panel content
-            local panelContent = Create("Frame", {
+            -- Panel background
+            local panelBg = Create("Frame", {
+                Name = "Background",
                 Size = UDim2.new(1, -2, 1, -2),
                 Position = UDim2.new(0, 1, 0, 1),
-                BackgroundColor3 = Library.Config.MainBackground,
+                BackgroundColor3 = Library.Config.PanelBackground,
                 BorderSizePixel = 0,
-                AutomaticSize = Enum.AutomaticSize.Y,
                 Parent = innerBorder
             })
             
@@ -565,21 +505,21 @@ function Window:CreateTab(name)
                 Size = UDim2.new(1, 0, 0, 1),
                 BackgroundColor3 = Library.Config.HighlightColor,
                 BorderSizePixel = 0,
-                Parent = panelContent
+                Parent = panelBg
             })
             
-            -- Title (positioned above panel like in GHack)
-            section.TitleLabel = Create("TextLabel", {
+            -- Title
+            Create("TextLabel", {
                 Name = "Title",
-                Size = UDim2.new(1, -10, 0, 16),
-                Position = UDim2.new(0, 10, 0, 2),
+                Size = UDim2.new(1, -8, 0, 16),
+                Position = UDim2.new(0, 8, 0, 3),
                 BackgroundTransparency = 1,
                 Text = sectionName,
                 TextColor3 = Library.Config.TextColor,
                 Font = Library.Config.Font,
                 TextSize = Library.Config.FontSize,
                 TextXAlignment = Enum.TextXAlignment.Left,
-                Parent = panelContent
+                Parent = panelBg
             })
             
             -- Controls container
@@ -589,20 +529,20 @@ function Window:CreateTab(name)
                 Position = UDim2.new(0, 0, 0, 20),
                 AutomaticSize = Enum.AutomaticSize.Y,
                 BackgroundTransparency = 1,
-                Parent = panelContent
+                Parent = panelBg
             })
             
             Create("UIListLayout", {
-                Padding = UDim.new(0, 2),
+                Padding = UDim.new(0, 1),
                 SortOrder = Enum.SortOrder.LayoutOrder,
                 Parent = section.Content
             })
             
             Create("UIPadding", {
                 PaddingTop = UDim.new(0, 2),
-                PaddingBottom = UDim.new(0, 6),
-                PaddingLeft = UDim.new(0, 7),
-                PaddingRight = UDim.new(0, 7),
+                PaddingBottom = UDim.new(0, 5),
+                PaddingLeft = UDim.new(0, 5),
+                PaddingRight = UDim.new(0, 5),
                 Parent = section.Content
             })
             
@@ -635,10 +575,6 @@ function Window:CreateTab(name)
                 return Library.Controls.CreateLabel(s, text)
             end
             
-            section.CreateKeybind = function(s, label, default, callback)
-                return Library.Controls.CreateKeybind(s, label, default, callback)
-            end
-            
             table.insert(self.Sections, section)
             return section
         end
@@ -648,16 +584,15 @@ function Window:CreateTab(name)
             tab:SwitchSubTab(subtab.Index)
         end)
         
-        -- Hover effect
         subtab.Button.MouseEnter:Connect(function()
             if subtab.Index ~= tab.ActiveSubTab then
-                subtab.Button.TextTransparency = 0.1
+                subtab.Button.TextColor3 = Library.Config.TextColor
             end
         end)
         
         subtab.Button.MouseLeave:Connect(function()
             if subtab.Index ~= tab.ActiveSubTab then
-                subtab.Button.TextTransparency = 0.4
+                subtab.Button.TextColor3 = Library.Config.DimTextColor
             end
         end)
         
@@ -671,8 +606,7 @@ function Window:CreateTab(name)
         
         local current = self.SubTabs[self.ActiveSubTab]
         if current then
-            current.Button.TextColor3 = Color3.fromRGB(230, 230, 230)
-            current.Button.TextTransparency = 0.4
+            current.Button.TextColor3 = Library.Config.DimTextColor
             current.Content.Visible = false
         end
         
@@ -680,7 +614,6 @@ function Window:CreateTab(name)
         local new = self.SubTabs[index]
         if new then
             new.Button.TextColor3 = Library.Config.HighlightColor
-            new.Button.TextTransparency = 0
             new.Content.Visible = true
         end
     end
@@ -705,23 +638,18 @@ end
 function Window:SwitchTab(index)
     if self.ActiveTab == index then return end
     
-    -- Deactivate current
     local current = self.Tabs[self.ActiveTab]
     if current then
         current.Button.TextColor3 = Library.Config.TextColor
-        current.ActiveLine.Visible = false
         current.SubTabContainer.Visible = false
         current.ContentFrame.Visible = false
     end
     
-    self.PreviousTab = self.ActiveTab
     self.ActiveTab = index
     
-    -- Activate new
     local new = self.Tabs[index]
     if new then
         new.Button.TextColor3 = Library.Config.HighlightColor
-        new.ActiveLine.Visible = true
         new.SubTabContainer.Visible = true
         new.ContentFrame.Visible = true
     end
@@ -730,7 +658,7 @@ end
 --[[ CONTROL FACTORY ]]
 Library.Controls = {}
 
--- CheckBox (exact GHack style)
+-- CheckBox (GHack style)
 function Library.Controls.CreateToggle(section, label, default, callback, options)
     options = options or {}
     local controlId = section.Name .. "_" .. label
@@ -741,27 +669,26 @@ function Library.Controls.CreateToggle(section, label, default, callback, option
     control.Risk = options.Risk
     control.Type = "Toggle"
     
-    Library:Log("info", "Control", "Creating toggle: " .. label)
     Library:TrackControlState(controlId, "Toggle", control.Value)
     
     local container = Create("Frame", {
         Name = label,
-        Size = UDim2.new(1, 0, 0, 14),
+        Size = UDim2.new(1, 0, 0, 13),
         BackgroundTransparency = 1,
         LayoutOrder = #section.Controls + 1,
         Parent = section.Content
     })
     
-    -- Checkbox outer border (29, 29, 29)
+    -- Checkbox outer (29, 29, 29)
     local boxOuter = Create("Frame", {
-        Size = UDim2.new(0, 12, 0, 12),
-        Position = UDim2.new(0, 0, 0.5, -6),
+        Size = UDim2.new(0, 10, 0, 10),
+        Position = UDim2.new(0, 0, 0.5, -5),
         BackgroundColor3 = Library.Config.OuterBorder,
         BorderSizePixel = 0,
         Parent = container
     })
     
-    -- Inner border (19, 19, 19)
+    -- Inner (19, 19, 19)
     local boxInner = Create("Frame", {
         Size = UDim2.new(1, -2, 1, -2),
         Position = UDim2.new(0, 1, 0, 1),
@@ -770,7 +697,7 @@ function Library.Controls.CreateToggle(section, label, default, callback, option
         Parent = boxOuter
     })
     
-    -- Fill area
+    -- Fill
     local boxFill = Create("Frame", {
         Size = UDim2.new(1, -2, 1, -2),
         Position = UDim2.new(0, 1, 0, 1),
@@ -779,13 +706,10 @@ function Library.Controls.CreateToggle(section, label, default, callback, option
         Parent = boxInner
     })
     
-    -- Gradient overlay (like GMod GradientDown)
-    CreateGradient(boxFill, "down", 0)
-    
     -- Label
-    local labelText = Create("TextLabel", {
-        Size = UDim2.new(1, -16, 1, 0),
-        Position = UDim2.new(0, 14, 0, 0),
+    Create("TextLabel", {
+        Size = UDim2.new(1, -14, 1, 0),
+        Position = UDim2.new(0, 13, 0, 0),
         BackgroundTransparency = 1,
         Text = label,
         TextColor3 = control.Risk and Library.Config.RiskTextColor or Library.Config.TextColor,
@@ -795,7 +719,7 @@ function Library.Controls.CreateToggle(section, label, default, callback, option
         Parent = container
     })
     
-    -- Clickable area
+    -- Click area
     local button = Create("TextButton", {
         Size = UDim2.new(1, 0, 1, 0),
         BackgroundTransparency = 1,
@@ -803,10 +727,9 @@ function Library.Controls.CreateToggle(section, label, default, callback, option
         Parent = container
     })
     
-    -- Hover effect
     button.MouseEnter:Connect(function()
         if not control.Value then
-            boxFill.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+            boxFill.BackgroundColor3 = Library.Config.HoverBackground
         end
     end)
     
@@ -834,20 +757,16 @@ function Library.Controls.CreateToggle(section, label, default, callback, option
         control.Value = value
         boxFill.BackgroundColor3 = value and Library.Config.HighlightColor or Library.Config.ControlBackground
         Library:TrackControlState(controlId, "Toggle", value)
-        if control.Callback then
-            pcall(control.Callback, value)
-        end
+        if control.Callback then pcall(control.Callback, value) end
     end
     
-    function control:Get()
-        return control.Value
-    end
+    function control:Get() return control.Value end
     
     table.insert(section.Controls, control)
     return control
 end
 
--- Slider (exact GHack style)
+-- Slider (GHack style)
 function Library.Controls.CreateSlider(section, label, options, callback)
     options = options or {}
     local controlId = section.Name .. "_" .. label
@@ -863,10 +782,11 @@ function Library.Controls.CreateSlider(section, label, options, callback)
     
     Library:TrackControlState(controlId, "Slider", control.Value)
     
-    local totalHeight = (options.DrawLabel ~= false) and 26 or 12
+    local showLabel = options.DrawLabel ~= false and label ~= ""
+    local totalHeight = showLabel and 24 or 11
     
     local container = Create("Frame", {
-        Name = label,
+        Name = label ~= "" and label or "Slider",
         Size = UDim2.new(1, 0, 0, totalHeight),
         BackgroundTransparency = 1,
         LayoutOrder = #section.Controls + 1,
@@ -874,9 +794,9 @@ function Library.Controls.CreateSlider(section, label, options, callback)
     })
     
     local yOffset = 0
-    if options.DrawLabel ~= false then
+    if showLabel then
         Create("TextLabel", {
-            Size = UDim2.new(1, 0, 0, 14),
+            Size = UDim2.new(1, 0, 0, 13),
             BackgroundTransparency = 1,
             Text = label,
             TextColor3 = Library.Config.TextColor,
@@ -885,19 +805,18 @@ function Library.Controls.CreateSlider(section, label, options, callback)
             TextXAlignment = Enum.TextXAlignment.Left,
             Parent = container
         })
-        yOffset = 14
+        yOffset = 13
     end
     
-    -- Track outer (29, 29, 29)
+    -- Track outer
     local trackOuter = Create("Frame", {
-        Size = UDim2.new(1, 0, 0, 11),
+        Size = UDim2.new(1, 0, 0, 10),
         Position = UDim2.new(0, 0, 0, yOffset),
         BackgroundColor3 = Library.Config.OuterBorder,
         BorderSizePixel = 0,
         Parent = container
     })
     
-    -- Track inner (19, 19, 19)
     local trackInner = Create("Frame", {
         Size = UDim2.new(1, -2, 1, -2),
         Position = UDim2.new(0, 1, 0, 1),
@@ -906,17 +825,16 @@ function Library.Controls.CreateSlider(section, label, options, callback)
         Parent = trackOuter
     })
     
-    -- Track background (41, 41, 41)
     local trackBg = Create("Frame", {
         Size = UDim2.new(1, -2, 1, -2),
         Position = UDim2.new(0, 1, 0, 1),
-        BackgroundColor3 = Library.Config.ControlBackground,
+        BackgroundColor3 = Library.Config.ControlBackgroundAlt,
         BorderSizePixel = 0,
         ClipsDescendants = true,
         Parent = trackInner
     })
     
-    -- Fill (pink)
+    -- Fill
     local initialPos = (control.Value - control.Min) / (control.Max - control.Min)
     local fill = Create("Frame", {
         Size = UDim2.new(initialPos, 0, 1, 0),
@@ -925,21 +843,19 @@ function Library.Controls.CreateSlider(section, label, options, callback)
         Parent = trackBg
     })
     
-    -- Gradient on fill
-    CreateGradient(fill, "down", 0)
-    
-    -- Value label (inside slider)
+    -- Value label
     local valueLabel = Create("TextLabel", {
-        Size = UDim2.new(1, 0, 1, 0),
+        Size = UDim2.new(1, -4, 1, 0),
+        Position = UDim2.new(0, 2, 0, 0),
         BackgroundTransparency = 1,
         Text = tostring(control.Value) .. control.Suffix,
         TextColor3 = Library.Config.DimTextColor,
         Font = Enum.Font.Code,
         TextSize = 10,
+        TextXAlignment = Enum.TextXAlignment.Right,
         Parent = trackBg
     })
     
-    -- Drag handling
     local dragging = false
     
     local function update(input)
@@ -958,9 +874,7 @@ function Library.Controls.CreateSlider(section, label, options, callback)
         
         Library:TrackControlState(controlId, "Slider", value)
         
-        if control.Callback then
-            pcall(control.Callback, value)
-        end
+        if control.Callback then pcall(control.Callback, value) end
     end
     
     trackBg.InputBegan:Connect(function(input)
@@ -988,14 +902,10 @@ function Library.Controls.CreateSlider(section, label, options, callback)
         fill.Size = UDim2.new(pos, 0, 1, 0)
         valueLabel.Text = tostring(control.Value) .. control.Suffix
         Library:TrackControlState(controlId, "Slider", control.Value)
-        if control.Callback then
-            pcall(control.Callback, control.Value)
-        end
+        if control.Callback then pcall(control.Callback, control.Value) end
     end
     
-    function control:Get()
-        return control.Value
-    end
+    function control:Get() return control.Value end
     
     table.insert(section.Controls, control)
     return control
@@ -1004,7 +914,7 @@ end
 -- Dropdown (GHack style)
 function Library.Controls.CreateDropdown(section, label, options, callback)
     options = options or {}
-    local controlId = section.Name .. "_" .. label
+    local controlId = section.Name .. "_" .. (label ~= "" and label or "Dropdown")
     
     local control = {}
     control.Options = options.Options or {}
@@ -1015,10 +925,11 @@ function Library.Controls.CreateDropdown(section, label, options, callback)
     
     Library:TrackControlState(controlId, "Dropdown", control.Value)
     
-    local totalHeight = (options.DrawLabel ~= false) and 32 or 18
+    local showLabel = options.DrawLabel ~= false and label ~= ""
+    local totalHeight = showLabel and 30 or 16
     
     local container = Create("Frame", {
-        Name = label,
+        Name = label ~= "" and label or "Dropdown",
         Size = UDim2.new(1, 0, 0, totalHeight),
         BackgroundTransparency = 1,
         ClipsDescendants = false,
@@ -1028,12 +939,12 @@ function Library.Controls.CreateDropdown(section, label, options, callback)
     })
     
     local yOffset = 0
-    if options.DrawLabel ~= false then
+    if showLabel then
         Create("TextLabel", {
-            Size = UDim2.new(1, 0, 0, 14),
+            Size = UDim2.new(1, 0, 0, 13),
             BackgroundTransparency = 1,
             Text = label,
-            TextColor3 = options.Risk and Library.Config.RiskTextColor or Library.Config.TextColor,
+            TextColor3 = Library.Config.TextColor,
             Font = Library.Config.Font,
             TextSize = Library.Config.FontSize,
             TextXAlignment = Enum.TextXAlignment.Left,
@@ -1043,9 +954,9 @@ function Library.Controls.CreateDropdown(section, label, options, callback)
         yOffset = 14
     end
     
-    -- Dropdown button (GHack style)
+    -- Button outer
     local btnOuter = Create("Frame", {
-        Size = UDim2.new(1, 0, 0, 18),
+        Size = UDim2.new(1, 0, 0, 16),
         Position = UDim2.new(0, 0, 0, yOffset),
         BackgroundColor3 = Library.Config.OuterBorder,
         BorderSizePixel = 0,
@@ -1065,20 +976,18 @@ function Library.Controls.CreateDropdown(section, label, options, callback)
     local btnBg = Create("Frame", {
         Size = UDim2.new(1, -2, 1, -2),
         Position = UDim2.new(0, 1, 0, 1),
-        BackgroundColor3 = Library.Config.PanelBackground,
+        BackgroundColor3 = Library.Config.ControlBackgroundAlt,
         BorderSizePixel = 0,
         ZIndex = 5,
         Parent = btnInner
     })
     
-    CreateGradient(btnBg, "down", 0)
-    
     local valueText = Create("TextLabel", {
-        Size = UDim2.new(1, -22, 1, 0),
-        Position = UDim2.new(0, 8, 0, 0),
+        Size = UDim2.new(1, -18, 1, 0),
+        Position = UDim2.new(0, 6, 0, 0),
         BackgroundTransparency = 1,
         Text = tostring(control.Value),
-        TextColor3 = Color3.fromRGB(230, 230, 230),
+        TextColor3 = Library.Config.TextColor,
         Font = Library.Config.Font,
         TextSize = Library.Config.FontSize,
         TextXAlignment = Enum.TextXAlignment.Left,
@@ -1086,10 +995,9 @@ function Library.Controls.CreateDropdown(section, label, options, callback)
         Parent = btnBg
     })
     
-    -- Arrow (triangle)
     local arrow = Create("TextLabel", {
-        Size = UDim2.new(0, 16, 1, 0),
-        Position = UDim2.new(1, -18, 0, 0),
+        Size = UDim2.new(0, 14, 1, 0),
+        Position = UDim2.new(1, -14, 0, 0),
         BackgroundTransparency = 1,
         Text = "▼",
         TextColor3 = Library.Config.TextColor,
@@ -1099,7 +1007,6 @@ function Library.Controls.CreateDropdown(section, label, options, callback)
         Parent = btnBg
     })
     
-    -- Button overlay
     local button = Create("TextButton", {
         Size = UDim2.new(1, 0, 1, 0),
         BackgroundTransparency = 1,
@@ -1111,8 +1018,8 @@ function Library.Controls.CreateDropdown(section, label, options, callback)
     -- Options frame
     local optionsFrame = Create("Frame", {
         Size = UDim2.new(1, 0, 0, 0),
-        Position = UDim2.new(0, 0, 0, yOffset + 18),
-        BackgroundColor3 = Library.Config.PanelBackground,
+        Position = UDim2.new(0, 0, 0, yOffset + 16),
+        BackgroundColor3 = Library.Config.ControlBackgroundAlt,
         BorderSizePixel = 0,
         ClipsDescendants = true,
         ZIndex = 100,
@@ -1146,12 +1053,12 @@ function Library.Controls.CreateDropdown(section, label, options, callback)
         
         for _, option in ipairs(control.Options) do
             local optBtn = Create("TextButton", {
-                Size = UDim2.new(1, 0, 0, 18),
-                BackgroundColor3 = Library.Config.PanelBackground,
+                Size = UDim2.new(1, 0, 0, 16),
+                BackgroundColor3 = Library.Config.ControlBackgroundAlt,
                 BorderSizePixel = 0,
                 Text = tostring(option),
                 TextColor3 = control.Value == option and Library.Config.HighlightColor or Library.Config.TextColor,
-                Font = control.Value == option and Library.Config.FontBold or Library.Config.Font,
+                Font = Library.Config.Font,
                 TextSize = Library.Config.FontSize,
                 ZIndex = 101,
                 Parent = optionsList
@@ -1162,7 +1069,7 @@ function Library.Controls.CreateDropdown(section, label, options, callback)
             end)
             
             optBtn.MouseLeave:Connect(function()
-                optBtn.BackgroundColor3 = Library.Config.PanelBackground
+                optBtn.BackgroundColor3 = Library.Config.ControlBackgroundAlt
             end)
             
             optBtn.MouseButton1Click:Connect(function()
@@ -1175,15 +1082,11 @@ function Library.Controls.CreateDropdown(section, label, options, callback)
                 
                 Library:TrackControlState(controlId, "Dropdown", option)
                 
-                if control.Callback then
-                    pcall(control.Callback, option)
-                end
+                if control.Callback then pcall(control.Callback, option) end
                 
-                -- Update styling
                 for _, btn in ipairs(optionsList:GetChildren()) do
                     if btn:IsA("TextButton") then
                         btn.TextColor3 = btn.Text == tostring(option) and Library.Config.HighlightColor or Library.Config.TextColor
-                        btn.Font = btn.Text == tostring(option) and Library.Config.FontBold or Library.Config.Font
                     end
                 end
             end)
@@ -1192,33 +1095,30 @@ function Library.Controls.CreateDropdown(section, label, options, callback)
     
     createOptions()
     
-    -- Hover effects
     button.MouseEnter:Connect(function()
         btnBg.BackgroundColor3 = Library.Config.HoverBackground
     end)
     
     button.MouseLeave:Connect(function()
         if not control.Opened then
-            btnBg.BackgroundColor3 = Library.Config.PanelBackground
+            btnBg.BackgroundColor3 = Library.Config.ControlBackgroundAlt
         end
     end)
     
     button.MouseButton1Click:Connect(function()
         control.Opened = not control.Opened
         optionsFrame.Visible = control.Opened
-        local targetHeight = control.Opened and math.min(#control.Options * 18, 126) or 0
+        local targetHeight = control.Opened and math.min(#control.Options * 16, 112) or 0
         optionsFrame.Size = UDim2.new(1, 0, 0, targetHeight)
         arrow.Text = control.Opened and "▲" or "▼"
-        btnBg.BackgroundColor3 = control.Opened and Library.Config.HoverBackground or Library.Config.PanelBackground
+        btnBg.BackgroundColor3 = control.Opened and Library.Config.HoverBackground or Library.Config.ControlBackgroundAlt
     end)
     
     function control:Set(value)
         control.Value = value
         valueText.Text = tostring(value)
         Library:TrackControlState(controlId, "Dropdown", value)
-        if control.Callback then
-            pcall(control.Callback, value)
-        end
+        if control.Callback then pcall(control.Callback, value) end
     end
     
     function control:Refresh(newOptions)
@@ -1226,83 +1126,16 @@ function Library.Controls.CreateDropdown(section, label, options, callback)
         createOptions()
     end
     
-    function control:Get()
-        return control.Value
-    end
+    function control:Get() return control.Value end
     
     table.insert(section.Controls, control)
     return control
 end
 
--- Button (GHack style)
-function Library.Controls.CreateButton(section, label, callback)
-    local control = {}
-    control.Callback = callback
-    control.Type = "Button"
-    
-    -- Button outer
-    local btnOuter = Create("Frame", {
-        Name = label,
-        Size = UDim2.new(1, 0, 0, 18),
-        BackgroundColor3 = Library.Config.OuterBorder,
-        BorderSizePixel = 0,
-        LayoutOrder = #section.Controls + 1,
-        Parent = section.Content
-    })
-    
-    local btnInner = Create("Frame", {
-        Size = UDim2.new(1, -2, 1, -2),
-        Position = UDim2.new(0, 1, 0, 1),
-        BackgroundColor3 = Library.Config.InnerBorder,
-        BorderSizePixel = 0,
-        Parent = btnOuter
-    })
-    
-    local btnBg = Create("Frame", {
-        Size = UDim2.new(1, -2, 1, -2),
-        Position = UDim2.new(0, 1, 0, 1),
-        BackgroundColor3 = Library.Config.PanelBackground,
-        BorderSizePixel = 0,
-        Parent = btnInner
-    })
-    
-    CreateGradient(btnBg, "down", 0)
-    
-    local button = Create("TextButton", {
-        Size = UDim2.new(1, 0, 1, 0),
-        BackgroundTransparency = 1,
-        Text = label,
-        TextColor3 = Library.Config.TextColor,
-        Font = Library.Config.Font,
-        TextSize = Library.Config.FontSize,
-        Parent = btnBg
-    })
-    
-    button.MouseEnter:Connect(function()
-        btnBg.BackgroundColor3 = Library.Config.HoverBackground
-    end)
-    
-    button.MouseLeave:Connect(function()
-        btnBg.BackgroundColor3 = Library.Config.PanelBackground
-    end)
-    
-    button.MouseButton1Click:Connect(function()
-        btnBg.BackgroundColor3 = Library.Config.HighlightColor
-        task.delay(0.15, function()
-            btnBg.BackgroundColor3 = Library.Config.PanelBackground
-        end)
-        
-        if control.Callback then
-            pcall(control.Callback)
-        end
-    end)
-    
-    table.insert(section.Controls, control)
-    return control
-end
-
--- ColorPicker (simplified GHack style)
+-- ColorPicker (GHack style - inline with label)
 function Library.Controls.CreateColorPicker(section, label, default, callback)
+    local controlId = section.Name .. "_" .. label
+    
     local control = {}
     control.Value = default or Library.Config.HighlightColor
     control.Callback = callback
@@ -1311,7 +1144,7 @@ function Library.Controls.CreateColorPicker(section, label, default, callback)
     
     local container = Create("Frame", {
         Name = label,
-        Size = UDim2.new(1, 0, 0, 14),
+        Size = UDim2.new(1, 0, 0, 13),
         BackgroundTransparency = 1,
         ClipsDescendants = false,
         ZIndex = 3,
@@ -1319,6 +1152,7 @@ function Library.Controls.CreateColorPicker(section, label, default, callback)
         Parent = section.Content
     })
     
+    -- Label
     Create("TextLabel", {
         Size = UDim2.new(1, -28, 1, 0),
         BackgroundTransparency = 1,
@@ -1331,10 +1165,10 @@ function Library.Controls.CreateColorPicker(section, label, default, callback)
         Parent = container
     })
     
-    -- Color box (GHack style)
+    -- Color box outer
     local colorBoxOuter = Create("Frame", {
-        Size = UDim2.new(0, 22, 0, 12),
-        Position = UDim2.new(1, -22, 0.5, -6),
+        Size = UDim2.new(0, 20, 0, 10),
+        Position = UDim2.new(1, -20, 0.5, -5),
         BackgroundColor3 = Library.Config.OuterBorder,
         BorderSizePixel = 0,
         ZIndex = 3,
@@ -1356,17 +1190,15 @@ function Library.Controls.CreateColorPicker(section, label, default, callback)
         BackgroundColor3 = control.Value,
         BorderSizePixel = 0,
         Text = "",
-        ZIndex = 3,
+        ZIndex = 4,
         Parent = colorBoxInner
     })
     
-    CreateGradient(colorBox, "down", 0)
-    
     -- Picker popup
     local pickerFrame = Create("Frame", {
-        Size = UDim2.new(0, 160, 0, 90),
-        Position = UDim2.new(1, -160, 0, 16),
-        BackgroundColor3 = Library.Config.MainBackground,
+        Size = UDim2.new(0, 150, 0, 85),
+        Position = UDim2.new(1, -150, 0, 15),
+        BackgroundColor3 = Library.Config.PanelBackground,
         BorderSizePixel = 0,
         Visible = false,
         ZIndex = 50,
@@ -1379,22 +1211,24 @@ function Library.Controls.CreateColorPicker(section, label, default, callback)
         Parent = pickerFrame
     })
     
+    local rFill, gFill, bFill
+    
     local function createSlider(name, y, color, getValue, setValue)
         Create("TextLabel", {
-            Size = UDim2.new(0, 14, 0, 12),
-            Position = UDim2.new(0, 5, 0, y),
+            Size = UDim2.new(0, 12, 0, 10),
+            Position = UDim2.new(0, 4, 0, y),
             BackgroundTransparency = 1,
             Text = name,
             TextColor3 = color,
             Font = Library.Config.Font,
-            TextSize = 10,
+            TextSize = 9,
             ZIndex = 51,
             Parent = pickerFrame
         })
         
         local sliderBg = Create("Frame", {
-            Size = UDim2.new(1, -30, 0, 10),
-            Position = UDim2.new(0, 22, 0, y + 1),
+            Size = UDim2.new(1, -25, 0, 8),
+            Position = UDim2.new(0, 18, 0, y + 1),
             BackgroundColor3 = Library.Config.ControlBackground,
             BorderSizePixel = 0,
             ZIndex = 51,
@@ -1429,34 +1263,32 @@ function Library.Controls.CreateColorPicker(section, label, default, callback)
                 fill.Size = UDim2.new(pos, 0, 1, 0)
                 setValue(math.floor(pos * 255))
                 colorBox.BackgroundColor3 = control.Value
-                if control.Callback then
-                    pcall(control.Callback, control.Value)
-                end
+                if control.Callback then pcall(control.Callback, control.Value) end
             end
         end)
         
         return fill
     end
     
-    local rFill = createSlider("R", 8, Color3.fromRGB(255, 100, 100),
+    rFill = createSlider("R", 6, Color3.fromRGB(255, 100, 100),
         function() return control.Value.R * 255 end,
         function(v) control.Value = Color3.fromRGB(v, control.Value.G * 255, control.Value.B * 255) end
     )
     
-    local gFill = createSlider("G", 28, Color3.fromRGB(100, 255, 100),
+    gFill = createSlider("G", 22, Color3.fromRGB(100, 255, 100),
         function() return control.Value.G * 255 end,
         function(v) control.Value = Color3.fromRGB(control.Value.R * 255, v, control.Value.B * 255) end
     )
     
-    local bFill = createSlider("B", 48, Color3.fromRGB(100, 100, 255),
+    bFill = createSlider("B", 38, Color3.fromRGB(100, 100, 255),
         function() return control.Value.B * 255 end,
         function(v) control.Value = Color3.fromRGB(control.Value.R * 255, control.Value.G * 255, v) end
     )
     
     -- Hex input
     local hexBox = Create("TextBox", {
-        Size = UDim2.new(1, -10, 0, 16),
-        Position = UDim2.new(0, 5, 0, 68),
+        Size = UDim2.new(1, -8, 0, 14),
+        Position = UDim2.new(0, 4, 0, 56),
         BackgroundColor3 = Library.Config.ControlBackground,
         BorderSizePixel = 0,
         Text = string.format("#%02X%02X%02X", control.Value.R * 255, control.Value.G * 255, control.Value.B * 255),
@@ -1465,6 +1297,11 @@ function Library.Controls.CreateColorPicker(section, label, default, callback)
         TextSize = 10,
         ZIndex = 51,
         Parent = pickerFrame
+    })
+    
+    Create("UIPadding", {
+        PaddingLeft = UDim.new(0, 4),
+        Parent = hexBox
     })
     
     hexBox.FocusLost:Connect(function()
@@ -1478,9 +1315,7 @@ function Library.Controls.CreateColorPicker(section, label, default, callback)
             rFill.Size = UDim2.new(r / 255, 0, 1, 0)
             gFill.Size = UDim2.new(g / 255, 0, 1, 0)
             bFill.Size = UDim2.new(b / 255, 0, 1, 0)
-            if control.Callback then
-                pcall(control.Callback, control.Value)
-            end
+            if control.Callback then pcall(control.Callback, control.Value) end
         end
     end)
     
@@ -1496,14 +1331,72 @@ function Library.Controls.CreateColorPicker(section, label, default, callback)
         rFill.Size = UDim2.new(color.R, 0, 1, 0)
         gFill.Size = UDim2.new(color.G, 0, 1, 0)
         bFill.Size = UDim2.new(color.B, 0, 1, 0)
-        if control.Callback then
-            pcall(control.Callback, color)
-        end
+        if control.Callback then pcall(control.Callback, color) end
     end
     
-    function control:Get()
-        return control.Value
-    end
+    function control:Get() return control.Value end
+    
+    table.insert(section.Controls, control)
+    return control
+end
+
+-- Button (GHack style)
+function Library.Controls.CreateButton(section, label, callback)
+    local control = {}
+    control.Callback = callback
+    control.Type = "Button"
+    
+    local btnOuter = Create("Frame", {
+        Name = label,
+        Size = UDim2.new(1, 0, 0, 16),
+        BackgroundColor3 = Library.Config.OuterBorder,
+        BorderSizePixel = 0,
+        LayoutOrder = #section.Controls + 1,
+        Parent = section.Content
+    })
+    
+    local btnInner = Create("Frame", {
+        Size = UDim2.new(1, -2, 1, -2),
+        Position = UDim2.new(0, 1, 0, 1),
+        BackgroundColor3 = Library.Config.InnerBorder,
+        BorderSizePixel = 0,
+        Parent = btnOuter
+    })
+    
+    local btnBg = Create("Frame", {
+        Size = UDim2.new(1, -2, 1, -2),
+        Position = UDim2.new(0, 1, 0, 1),
+        BackgroundColor3 = Library.Config.ControlBackgroundAlt,
+        BorderSizePixel = 0,
+        Parent = btnInner
+    })
+    
+    local button = Create("TextButton", {
+        Size = UDim2.new(1, 0, 1, 0),
+        BackgroundTransparency = 1,
+        Text = label,
+        TextColor3 = Library.Config.TextColor,
+        Font = Library.Config.Font,
+        TextSize = Library.Config.FontSize,
+        Parent = btnBg
+    })
+    
+    button.MouseEnter:Connect(function()
+        btnBg.BackgroundColor3 = Library.Config.HoverBackground
+    end)
+    
+    button.MouseLeave:Connect(function()
+        btnBg.BackgroundColor3 = Library.Config.ControlBackgroundAlt
+    end)
+    
+    button.MouseButton1Click:Connect(function()
+        btnBg.BackgroundColor3 = Library.Config.HighlightColor
+        task.delay(0.12, function()
+            btnBg.BackgroundColor3 = Library.Config.ControlBackgroundAlt
+        end)
+        
+        if control.Callback then pcall(control.Callback) end
+    end)
     
     table.insert(section.Controls, control)
     return control
@@ -1512,7 +1405,7 @@ end
 -- Label
 function Library.Controls.CreateLabel(section, text)
     local label = Create("TextLabel", {
-        Size = UDim2.new(1, 0, 0, 14),
+        Size = UDim2.new(1, 0, 0, 13),
         BackgroundTransparency = 1,
         Text = text,
         TextColor3 = Library.Config.DimTextColor,
@@ -1524,9 +1417,7 @@ function Library.Controls.CreateLabel(section, text)
     })
     
     return {
-        Set = function(_, newText)
-            label.Text = newText
-        end,
+        Set = function(_, newText) label.Text = newText end,
         Type = "Label"
     }
 end
@@ -1541,7 +1432,8 @@ function Library.Controls.CreateTextBox(section, label, default, callback, optio
     control.Callback = callback
     control.Type = "TextBox"
     
-    local totalHeight = (options.HideLabel) and 18 or 32
+    local showLabel = not options.HideLabel
+    local totalHeight = showLabel and 28 or 16
     
     local container = Create("Frame", {
         Name = label,
@@ -1552,9 +1444,9 @@ function Library.Controls.CreateTextBox(section, label, default, callback, optio
     })
     
     local yOffset = 0
-    if not options.HideLabel then
+    if showLabel then
         Create("TextLabel", {
-            Size = UDim2.new(1, 0, 0, 14),
+            Size = UDim2.new(1, 0, 0, 13),
             BackgroundTransparency = 1,
             Text = label,
             TextColor3 = Library.Config.TextColor,
@@ -1563,11 +1455,11 @@ function Library.Controls.CreateTextBox(section, label, default, callback, optio
             TextXAlignment = Enum.TextXAlignment.Left,
             Parent = container
         })
-        yOffset = 14
+        yOffset = 13
     end
     
     local boxOuter = Create("Frame", {
-        Size = UDim2.new(1, 0, 0, 18),
+        Size = UDim2.new(1, 0, 0, 15),
         Position = UDim2.new(0, 0, 0, yOffset),
         BackgroundColor3 = Library.Config.OuterBorder,
         BorderSizePixel = 0,
@@ -1585,7 +1477,7 @@ function Library.Controls.CreateTextBox(section, label, default, callback, optio
     local textBox = Create("TextBox", {
         Size = UDim2.new(1, -2, 1, -2),
         Position = UDim2.new(0, 1, 0, 1),
-        BackgroundColor3 = Library.Config.ControlBackground,
+        BackgroundColor3 = Library.Config.ControlBackgroundAlt,
         BorderSizePixel = 0,
         Text = control.Value,
         PlaceholderText = options.Placeholder or "",
@@ -1597,16 +1489,14 @@ function Library.Controls.CreateTextBox(section, label, default, callback, optio
     })
     
     Create("UIPadding", {
-        PaddingLeft = UDim.new(0, 6),
+        PaddingLeft = UDim.new(0, 5),
         Parent = textBox
     })
     
     textBox.FocusLost:Connect(function()
         control.Value = textBox.Text
         Library:TrackControlState(controlId, "TextBox", textBox.Text)
-        if control.Callback then
-            pcall(control.Callback, textBox.Text)
-        end
+        if control.Callback then pcall(control.Callback, textBox.Text) end
     end)
     
     function control:Set(value)
@@ -1615,9 +1505,7 @@ function Library.Controls.CreateTextBox(section, label, default, callback, optio
         Library:TrackControlState(controlId, "TextBox", value)
     end
     
-    function control:Get()
-        return control.Value
-    end
+    function control:Get() return control.Value end
     
     table.insert(section.Controls, control)
     return control
@@ -1650,8 +1538,8 @@ function Library:EnableDebugMode()
     self.Debug.GUI = debugGui
     
     local mainFrame = Create("Frame", {
-        Size = UDim2.new(0, 500, 0, 350),
-        Position = UDim2.new(0.5, -250, 0.5, -175),
+        Size = UDim2.new(0, 450, 0, 300),
+        Position = UDim2.new(0.5, -225, 0.5, -150),
         BackgroundColor3 = Color3.fromRGB(20, 20, 25),
         BorderSizePixel = 0,
         Parent = debugGui
@@ -1668,9 +1556,8 @@ function Library:EnableDebugMode()
         Parent = mainFrame
     })
     
-    -- Title
     local titleBar = Create("Frame", {
-        Size = UDim2.new(1, 0, 0, 28),
+        Size = UDim2.new(1, 0, 0, 26),
         BackgroundColor3 = Color3.fromRGB(25, 25, 35),
         BorderSizePixel = 0,
         Parent = mainFrame
@@ -1682,26 +1569,26 @@ function Library:EnableDebugMode()
     })
     
     Create("TextLabel", {
-        Size = UDim2.new(1, -40, 1, 0),
+        Size = UDim2.new(1, -35, 1, 0),
         Position = UDim2.new(0, 10, 0, 0),
         BackgroundTransparency = 1,
         Text = "🔧 DEBUG CONSOLE",
         TextColor3 = Color3.fromRGB(80, 200, 255),
         Font = Enum.Font.GothamBold,
-        TextSize = 14,
+        TextSize = 13,
         TextXAlignment = Enum.TextXAlignment.Left,
         Parent = titleBar
     })
     
     local closeBtn = Create("TextButton", {
-        Size = UDim2.new(0, 22, 0, 22),
-        Position = UDim2.new(1, -26, 0.5, -11),
+        Size = UDim2.new(0, 20, 0, 20),
+        Position = UDim2.new(1, -24, 0.5, -10),
         BackgroundColor3 = Color3.fromRGB(255, 80, 80),
         BorderSizePixel = 0,
         Text = "×",
         TextColor3 = Color3.fromRGB(255, 255, 255),
         Font = Enum.Font.GothamBold,
-        TextSize = 16,
+        TextSize = 14,
         Parent = titleBar
     })
     
@@ -1714,13 +1601,12 @@ function Library:EnableDebugMode()
         self:EnableDebugMode()
     end)
     
-    -- Logs area
     local logsFrame = Create("ScrollingFrame", {
-        Size = UDim2.new(1, -16, 1, -80),
-        Position = UDim2.new(0, 8, 0, 36),
+        Size = UDim2.new(1, -12, 1, -70),
+        Position = UDim2.new(0, 6, 0, 32),
         BackgroundColor3 = Color3.fromRGB(15, 15, 20),
         BorderSizePixel = 0,
-        ScrollBarThickness = 6,
+        ScrollBarThickness = 5,
         ScrollBarImageColor3 = Color3.fromRGB(80, 200, 255),
         CanvasSize = UDim2.new(0, 0, 0, 0),
         AutomaticCanvasSize = Enum.AutomaticSize.Y,
@@ -1733,50 +1619,43 @@ function Library:EnableDebugMode()
     })
     
     Create("UIListLayout", {
-        Padding = UDim.new(0, 2),
+        Padding = UDim.new(0, 1),
         Parent = logsFrame
     })
     
     Create("UIPadding", {
-        PaddingTop = UDim.new(0, 4),
-        PaddingLeft = UDim.new(0, 4),
-        PaddingRight = UDim.new(0, 4),
+        PaddingTop = UDim.new(0, 3),
+        PaddingLeft = UDim.new(0, 3),
+        PaddingRight = UDim.new(0, 3),
         Parent = logsFrame
     })
     
-    -- Buttons
     local buttonsFrame = Create("Frame", {
-        Size = UDim2.new(1, -16, 0, 32),
-        Position = UDim2.new(0, 8, 1, -40),
+        Size = UDim2.new(1, -12, 0, 28),
+        Position = UDim2.new(0, 6, 1, -34),
         BackgroundTransparency = 1,
         Parent = mainFrame
     })
     
     Create("UIListLayout", {
         FillDirection = Enum.FillDirection.Horizontal,
-        Padding = UDim.new(0, 8),
+        Padding = UDim.new(0, 6),
         Parent = buttonsFrame
     })
     
     local function createDebugButton(text, callback)
         local btn = Create("TextButton", {
-            Size = UDim2.new(0, 100, 1, 0),
+            Size = UDim2.new(0, 85, 1, 0),
             BackgroundColor3 = Color3.fromRGB(40, 40, 55),
             BorderSizePixel = 0,
             Text = text,
             TextColor3 = Color3.fromRGB(255, 255, 255),
             Font = Enum.Font.Gotham,
-            TextSize = 11,
+            TextSize = 10,
             Parent = buttonsFrame
         })
-        
-        Create("UICorner", {
-            CornerRadius = UDim.new(0, 4),
-            Parent = btn
-        })
-        
+        Create("UICorner", { CornerRadius = UDim.new(0, 4), Parent = btn })
         btn.MouseButton1Click:Connect(callback)
-        return btn
     end
     
     createDebugButton("Copy Logs", function()
@@ -1784,9 +1663,7 @@ function Library:EnableDebugMode()
         for _, log in ipairs(self.Debug.Logs) do
             text = text .. log.formatted .. "\n"
         end
-        if setclipboard then
-            setclipboard(text)
-        end
+        if setclipboard then setclipboard(text) end
     end)
     
     createDebugButton("Clear Logs", function()
@@ -1794,9 +1671,7 @@ function Library:EnableDebugMode()
         self.Debug.EventLogs = {}
         self.Debug.CallbackErrors = {}
         for _, child in ipairs(logsFrame:GetChildren()) do
-            if child:IsA("TextLabel") then
-                child:Destroy()
-            end
+            if child:IsA("TextLabel") then child:Destroy() end
         end
     end)
     
@@ -1805,21 +1680,16 @@ function Library:EnableDebugMode()
             local success, json = pcall(function()
                 return HttpService:JSONEncode(self.Debug.ControlStates)
             end)
-            if success then
-                setclipboard(json)
-            end
+            if success then setclipboard(json) end
         end
     end)
     
-    -- Update function
-    local function updateLogs()
+    function self:UpdateDebugGUI()
         for _, child in ipairs(logsFrame:GetChildren()) do
-            if child:IsA("TextLabel") then
-                child:Destroy()
-            end
+            if child:IsA("TextLabel") then child:Destroy() end
         end
         
-        for i = math.max(1, #self.Debug.Logs - 100), #self.Debug.Logs do
+        for i = math.max(1, #self.Debug.Logs - 80), #self.Debug.Logs do
             local log = self.Debug.Logs[i]
             if log then
                 local color = Library.Config.TextColor
@@ -1834,12 +1704,11 @@ function Library:EnableDebugMode()
                 Create("TextLabel", {
                     Size = UDim2.new(1, 0, 0, 0),
                     AutomaticSize = Enum.AutomaticSize.Y,
-                    BackgroundColor3 = Color3.fromRGB(25, 25, 30),
-                    BorderSizePixel = 0,
+                    BackgroundTransparency = 1,
                     Text = log.formatted,
                     TextColor3 = color,
                     Font = Enum.Font.Code,
-                    TextSize = 10,
+                    TextSize = 9,
                     TextXAlignment = Enum.TextXAlignment.Left,
                     TextWrapped = true,
                     Parent = logsFrame
@@ -1848,10 +1717,9 @@ function Library:EnableDebugMode()
         end
     end
     
-    self.UpdateDebugGUI = updateLogs
-    updateLogs()
+    self:UpdateDebugGUI()
     
-    -- Make draggable
+    -- Dragging
     local dragging = false
     local dragStart, startPos
     
@@ -1866,10 +1734,7 @@ function Library:EnableDebugMode()
     UserInputService.InputChanged:Connect(function(input)
         if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
             local delta = input.Position - dragStart
-            mainFrame.Position = UDim2.new(
-                startPos.X.Scale, startPos.X.Offset + delta.X,
-                startPos.Y.Scale, startPos.Y.Offset + delta.Y
-            )
+            mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
         end
     end)
     
