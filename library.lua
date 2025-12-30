@@ -1,1702 +1,1372 @@
 --[[
-    NexusLib Ultimate v4.0
-    Premium Drawing Library for Roblox
-    Combines best elements from: Tokyo, Abyss, Specter, Puppyware, Sierra, etc.
-
-    Features:
-    - Horizontal tab navigation
-    - Two-column section layout
-    - Dashed section borders
-    - All UI elements (Toggle, Slider, Button, Dropdown, Keybind, Textbox, ColorPicker, Label)
-    - Scrolling sections
-    - Watermark with stats
-    - Smooth animations
-    - Flag system for configs
-    - Draggable window
-    - Keybind list overlay
+    NexusLib v3.1 - Fixed Drawing UI Library
+    Added error handling for executor compatibility
 ]]
 
-local NexusLib = {}
-NexusLib.__index = NexusLib
-
--- Services
-local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
-local TweenService = game:GetService("TweenService")
-local Stats = game:GetService("Stats")
-
-local Player = Players.LocalPlayer
-local Mouse = Player:GetMouse()
-
--- Utility Functions
-local function Create(class, properties)
-    local obj = Drawing.new(class)
-    for prop, value in pairs(properties or {}) do
-        obj[prop] = value
-    end
-    return obj
+-- Check Drawing API support
+if not Drawing or not Drawing.new then
+    warn("NexusLib: Drawing API not supported by this executor")
+    return {
+        New = function() return {
+            Page = function() return {
+                Section = function() return {} end
+            } end,
+            Init = function() end,
+            Unload = function() end
+        } end
+    }
 end
 
-local function Lerp(a, b, t)
-    return a + (b - a) * t
-end
-
-local function LerpColor(c1, c2, t)
-    return Color3.new(
-        Lerp(c1.R, c2.R, t),
-        Lerp(c1.G, c2.G, t),
-        Lerp(c1.B, c2.B, t)
-    )
-end
-
-local function DeepCopy(t)
-    if type(t) ~= "table" then return t end
-    local copy = {}
-    for k, v in pairs(t) do
-        copy[k] = DeepCopy(v)
-    end
-    return copy
-end
-
-local function GetKeyName(key)
-    if typeof(key) == "EnumItem" then
-        local name = key.Name
-        if name:match("^Mouse") then
-            return name == "MouseButton1" and "M1" or name == "MouseButton2" and "M2" or "M3"
-        end
-        return #name == 1 and name or name:sub(1, 3):upper()
-    end
-    return "..."
-end
-
-local function IsInBounds(pos, size, point)
-    return point.X >= pos.X and point.X <= pos.X + size.X and
-           point.Y >= pos.Y and point.Y <= pos.Y + size.Y
-end
-
--- Theme System
-NexusLib.Themes = {
-    Default = {
-        Background = Color3.fromRGB(12, 12, 12),
-        TopBar = Color3.fromRGB(16, 16, 16),
-        Section = Color3.fromRGB(18, 18, 18),
-        SectionBorder = Color3.fromRGB(35, 35, 35),
-        Element = Color3.fromRGB(25, 25, 25),
-        ElementBorder = Color3.fromRGB(40, 40, 40),
-        Accent = Color3.fromRGB(138, 92, 255),
-        AccentDark = Color3.fromRGB(100, 65, 190),
-        Text = Color3.fromRGB(220, 220, 220),
-        TextDim = Color3.fromRGB(120, 120, 120),
-        TextDisabled = Color3.fromRGB(70, 70, 70),
-        SliderBg = Color3.fromRGB(35, 35, 35),
-        ToggleOff = Color3.fromRGB(45, 45, 45),
-        Outline = Color3.fromRGB(50, 50, 50),
-        OutlineDark = Color3.fromRGB(25, 25, 25)
-    },
-    Purple = {
-        Background = Color3.fromRGB(15, 12, 20),
-        TopBar = Color3.fromRGB(20, 16, 28),
-        Section = Color3.fromRGB(22, 18, 32),
-        SectionBorder = Color3.fromRGB(45, 35, 60),
-        Element = Color3.fromRGB(30, 25, 42),
-        ElementBorder = Color3.fromRGB(55, 45, 75),
-        Accent = Color3.fromRGB(160, 100, 255),
-        AccentDark = Color3.fromRGB(120, 70, 200),
-        Text = Color3.fromRGB(230, 225, 240),
-        TextDim = Color3.fromRGB(130, 120, 150),
-        TextDisabled = Color3.fromRGB(75, 70, 85),
-        SliderBg = Color3.fromRGB(40, 35, 55),
-        ToggleOff = Color3.fromRGB(50, 45, 65),
-        Outline = Color3.fromRGB(60, 50, 80),
-        OutlineDark = Color3.fromRGB(30, 25, 40)
-    },
-    Red = {
-        Background = Color3.fromRGB(14, 10, 10),
-        TopBar = Color3.fromRGB(20, 14, 14),
-        Section = Color3.fromRGB(24, 16, 16),
-        SectionBorder = Color3.fromRGB(55, 30, 30),
-        Element = Color3.fromRGB(35, 22, 22),
-        ElementBorder = Color3.fromRGB(65, 40, 40),
-        Accent = Color3.fromRGB(220, 80, 100),
-        AccentDark = Color3.fromRGB(170, 55, 75),
-        Text = Color3.fromRGB(235, 220, 220),
-        TextDim = Color3.fromRGB(145, 115, 115),
-        TextDisabled = Color3.fromRGB(85, 65, 65),
-        SliderBg = Color3.fromRGB(50, 30, 30),
-        ToggleOff = Color3.fromRGB(55, 35, 35),
-        Outline = Color3.fromRGB(70, 45, 45),
-        OutlineDark = Color3.fromRGB(35, 22, 22)
-    },
-    Blue = {
-        Background = Color3.fromRGB(10, 12, 16),
-        TopBar = Color3.fromRGB(14, 18, 24),
-        Section = Color3.fromRGB(16, 20, 28),
-        SectionBorder = Color3.fromRGB(30, 45, 65),
-        Element = Color3.fromRGB(22, 30, 42),
-        ElementBorder = Color3.fromRGB(40, 60, 85),
-        Accent = Color3.fromRGB(76, 162, 252),
-        AccentDark = Color3.fromRGB(50, 120, 200),
-        Text = Color3.fromRGB(220, 230, 240),
-        TextDim = Color3.fromRGB(110, 130, 155),
-        TextDisabled = Color3.fromRGB(60, 75, 95),
-        SliderBg = Color3.fromRGB(30, 42, 58),
-        ToggleOff = Color3.fromRGB(35, 48, 65),
-        Outline = Color3.fromRGB(45, 65, 90),
-        OutlineDark = Color3.fromRGB(22, 30, 42)
+local library = {
+    drawings = {},
+    connections = {},
+    flags = {},
+    pointers = {},
+    open = true,
+    accent = Color3.fromRGB(76, 162, 252),
+    theme = {
+        background = Color3.fromRGB(8, 8, 8),
+        topbar = Color3.fromRGB(11, 11, 11),
+        sidebar = Color3.fromRGB(8, 8, 8),
+        section = Color3.fromRGB(11, 11, 11),
+        sectionheader = Color3.fromRGB(11, 11, 11),
+        outline = Color3.fromRGB(28, 28, 28),
+        inline = Color3.fromRGB(38, 38, 38),
+        text = Color3.fromRGB(255, 255, 255),
+        dimtext = Color3.fromRGB(78, 78, 78),
+        elementbg = Color3.fromRGB(20, 20, 20)
     }
 }
 
--- Globals
-NexusLib.Windows = {}
-NexusLib.Flags = {}
-NexusLib.Connections = {}
-NexusLib.ToggleKey = Enum.KeyCode.RightShift
-NexusLib.Opened = true
+-- Services (with pcall protection)
+local UIS = game:GetService("UserInputService")
+local RS = game:GetService("RunService")
+local Players = game:GetService("Players")
 
--- Window Class
-function NexusLib:New(options)
-    options = options or {}
+-- Safe Drawing creation
+local function create(class, props)
+    local success, obj = pcall(function()
+        return Drawing.new(class)
+    end)
 
-    local Window = setmetatable({}, {__index = NexusLib})
-    Window.Name = options.name or "NexusLib"
-    Window.SubTitle = options.subtitle or ""
-    Window.SizeX = options.sizeX or 580
-    Window.SizeY = options.sizeY or 420
-    Window.Theme = NexusLib.Themes[options.theme] or NexusLib.Themes.Default
-    Window.Accent = options.accent or Window.Theme.Accent
-    Window.Position = options.position or Vector2.new(100, 100)
+    if not success or not obj then
+        warn("NexusLib: Failed to create Drawing:", class)
+        return {
+            Remove = function() end,
+            Visible = false,
+            Position = Vector2.new(0, 0),
+            Size = Vector2.new(0, 0),
+            Color = Color3.new(1, 1, 1),
+            Text = ""
+        }
+    end
 
-    Window.Pages = {}
-    Window.CurrentPage = nil
-    Window.Objects = {}
-    Window.Visible = true
-    Window.Dragging = false
-    Window.DragOffset = Vector2.zero
+    for k, v in pairs(props or {}) do
+        pcall(function() obj[k] = v end)
+    end
+    table.insert(library.drawings, obj)
+    return obj
+end
 
-    -- Create Main Container
-    Window.Objects.OuterOutline = Create("Square", {
-        Size = Vector2.new(Window.SizeX + 2, Window.SizeY + 2),
-        Position = Vector2.new(Window.Position.X - 1, Window.Position.Y - 1),
-        Color = Window.Theme.OutlineDark,
-        Filled = false,
-        Thickness = 1,
+local function remove(obj)
+    if not obj then return end
+    for i, v in pairs(library.drawings) do
+        if v == obj then
+            table.remove(library.drawings, i)
+            break
+        end
+    end
+    pcall(function() obj:Remove() end)
+end
+
+local function textBounds(text, size)
+    local success, result = pcall(function()
+        local t = Drawing.new("Text")
+        t.Text = text or ""
+        t.Size = size or 13
+        t.Font = 2
+        local b = t.TextBounds
+        t:Remove()
+        return b
+    end)
+    return success and result or Vector2.new(50, 13)
+end
+
+local function mouseOver(x, y, w, h)
+    local success, m = pcall(function()
+        return UIS:GetMouseLocation()
+    end)
+    if not success then return false end
+    return m.X >= x and m.X <= x + w and m.Y >= y and m.Y <= y + h
+end
+
+-- Main library
+function library:New(config)
+    config = config or {}
+    local name = config.name or "NexusLib"
+    local sizeX = config.sizeX or 580
+    local sizeY = config.sizeY or 450
+
+    if config.accent then
+        library.accent = config.accent
+    end
+
+    local window = {
+        pos = Vector2.new(100, 50),
+        size = Vector2.new(sizeX, sizeY),
+        dragging = false,
+        dragOffset = Vector2.new(0, 0),
+        pages = {},
+        currentPage = nil,
+        objects = {}
+    }
+
+    local t = library.theme
+    local a = library.accent
+
+    -- Main outline
+    window.objects.outline = create("Square", {
+        Size = window.size,
+        Position = window.pos,
+        Color = t.outline,
+        Filled = true,
+        Thickness = 0,
         Visible = true,
         ZIndex = 1
     })
 
-    Window.Objects.MainBg = Create("Square", {
-        Size = Vector2.new(Window.SizeX, Window.SizeY),
-        Position = Window.Position,
-        Color = Window.Theme.Background,
+    -- Main background
+    window.objects.bg = create("Square", {
+        Size = Vector2.new(sizeX - 2, sizeY - 2),
+        Position = window.pos + Vector2.new(1, 1),
+        Color = t.background,
         Filled = true,
+        Thickness = 0,
         Visible = true,
         ZIndex = 2
     })
 
-    Window.Objects.MainOutline = Create("Square", {
-        Size = Vector2.new(Window.SizeX, Window.SizeY),
-        Position = Window.Position,
-        Color = Window.Theme.Outline,
-        Filled = false,
-        Thickness = 1,
+    -- Top bar
+    window.objects.topbar = create("Square", {
+        Size = Vector2.new(sizeX - 4, 22),
+        Position = window.pos + Vector2.new(2, 2),
+        Color = t.topbar,
+        Filled = true,
+        Thickness = 0,
         Visible = true,
         ZIndex = 3
     })
 
-    -- Top Bar
-    Window.Objects.TopBar = Create("Square", {
-        Size = Vector2.new(Window.SizeX - 2, 28),
-        Position = Vector2.new(Window.Position.X + 1, Window.Position.Y + 1),
-        Color = Window.Theme.TopBar,
+    -- Accent line
+    window.objects.accentLine = create("Square", {
+        Size = Vector2.new(sizeX - 4, 1),
+        Position = window.pos + Vector2.new(2, 24),
+        Color = a,
         Filled = true,
+        Thickness = 0,
         Visible = true,
         ZIndex = 4
     })
 
-    -- Accent Line under top bar
-    Window.Objects.AccentLine = Create("Line", {
-        From = Vector2.new(Window.Position.X + 1, Window.Position.Y + 29),
-        To = Vector2.new(Window.Position.X + Window.SizeX - 1, Window.Position.Y + 29),
-        Color = Window.Accent,
-        Thickness = 1,
+    -- Title
+    window.objects.title = create("Text", {
+        Text = name,
+        Size = 13,
+        Font = 2,
+        Color = a,
+        Outline = true,
+        OutlineColor = Color3.new(0, 0, 0),
+        Position = window.pos + Vector2.new(8, 5),
         Visible = true,
         ZIndex = 5
     })
 
-    -- Title
-    Window.Objects.Title = Create("Text", {
-        Text = Window.Name,
-        Size = 13,
-        Font = 2,
-        Position = Vector2.new(Window.Position.X + 8, Window.Position.Y + 6),
-        Color = Window.Accent,
-        Outline = true,
-        OutlineColor = Color3.new(0, 0, 0),
+    -- Content area
+    window.objects.contentOutline = create("Square", {
+        Size = Vector2.new(sizeX - 4, sizeY - 50),
+        Position = window.pos + Vector2.new(2, 26),
+        Color = t.outline,
+        Filled = true,
+        Thickness = 0,
         Visible = true,
-        ZIndex = 6
+        ZIndex = 3
     })
 
-    -- Subtitle
-    if Window.SubTitle ~= "" then
-        Window.Objects.SubTitle = Create("Text", {
-            Text = " | " .. Window.SubTitle,
-            Size = 13,
-            Font = 2,
-            Position = Vector2.new(Window.Position.X + 8 + Window.Objects.Title.TextBounds.X, Window.Position.Y + 6),
-            Color = Window.Theme.TextDim,
-            Outline = true,
-            OutlineColor = Color3.new(0, 0, 0),
-            Visible = true,
-            ZIndex = 6
-        })
-    end
-
-    -- Tab Container Area (horizontal tabs)
-    Window.TabStartX = Window.Position.X + 8
-    Window.TabY = Window.Position.Y + 35
-    Window.ContentY = Window.Position.Y + 58
-    Window.ContentHeight = Window.SizeY - 65
-
-    -- Tab underline
-    Window.Objects.TabLine = Create("Line", {
-        From = Vector2.new(Window.Position.X + 1, Window.Position.Y + 55),
-        To = Vector2.new(Window.Position.X + Window.SizeX - 1, Window.Position.Y + 55),
-        Color = Window.Theme.SectionBorder,
-        Thickness = 1,
+    window.objects.content = create("Square", {
+        Size = Vector2.new(sizeX - 6, sizeY - 52),
+        Position = window.pos + Vector2.new(3, 27),
+        Color = t.section,
+        Filled = true,
+        Thickness = 0,
         Visible = true,
         ZIndex = 4
     })
 
-    -- Dragging
-    table.insert(NexusLib.Connections, UserInputService.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            local mousePos = Vector2.new(Mouse.X, Mouse.Y)
-            local topBarPos = Window.Objects.TopBar.Position
-            local topBarSize = Window.Objects.TopBar.Size
-
-            if IsInBounds(topBarPos, topBarSize, mousePos) then
-                Window.Dragging = true
-                Window.DragOffset = mousePos - Window.Position
-            end
-        end
-    end))
-
-    table.insert(NexusLib.Connections, UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            Window.Dragging = false
-        end
-    end))
-
-    table.insert(NexusLib.Connections, RunService.RenderStepped:Connect(function()
-        if Window.Dragging and Window.Visible then
-            local mousePos = Vector2.new(Mouse.X, Mouse.Y)
-            Window:SetPosition(mousePos - Window.DragOffset)
-        end
-    end))
-
-    -- Toggle Visibility
-    table.insert(NexusLib.Connections, UserInputService.InputBegan:Connect(function(input)
-        if input.KeyCode == NexusLib.ToggleKey then
-            Window:Toggle()
-        end
-    end))
-
-    table.insert(NexusLib.Windows, Window)
-    return Window
-end
-
-function NexusLib:SetPosition(pos)
-    local delta = pos - self.Position
-    self.Position = pos
-
-    for _, obj in pairs(self.Objects) do
-        if obj.Position then
-            obj.Position = obj.Position + delta
-        elseif obj.From then
-            obj.From = obj.From + delta
-            obj.To = obj.To + delta
-        end
-    end
-
-    -- Update tab positions
-    local tabX = self.Position.X + 8
-    for _, page in ipairs(self.Pages) do
-        page:UpdatePosition(delta)
-        if page.TabButton then
-            page.TabButton.Position = Vector2.new(tabX, self.Position.Y + 38)
-            tabX = tabX + page.TabButton.TextBounds.X + 20
-        end
-    end
-end
-
-function NexusLib:Toggle()
-    self.Visible = not self.Visible
-    for _, obj in pairs(self.Objects) do
-        obj.Visible = self.Visible
-    end
-    for _, page in ipairs(self.Pages) do
-        page:SetVisible(self.Visible and page == self.CurrentPage)
-    end
-end
-
-function NexusLib:SetTheme(themeName)
-    local theme = NexusLib.Themes[themeName]
-    if theme then
-        self.Theme = theme
-        self:RefreshTheme()
-    end
-end
-
-function NexusLib:RefreshTheme()
-    local t = self.Theme
-    self.Objects.MainBg.Color = t.Background
-    self.Objects.TopBar.Color = t.TopBar
-    self.Objects.MainOutline.Color = t.Outline
-    self.Objects.OuterOutline.Color = t.OutlineDark
-    self.Objects.TabLine.Color = t.SectionBorder
-
-    for _, page in ipairs(self.Pages) do
-        page:RefreshTheme()
-    end
-end
-
-function NexusLib:Unload()
-    for _, conn in ipairs(NexusLib.Connections) do
-        conn:Disconnect()
-    end
-    NexusLib.Connections = {}
-
-    for _, window in ipairs(NexusLib.Windows) do
-        for _, obj in pairs(window.Objects) do
-            obj:Remove()
-        end
-        for _, page in ipairs(window.Pages) do
-            page:Destroy()
-        end
-    end
-    NexusLib.Windows = {}
-    NexusLib.Flags = {}
-end
-
--- Page Class
-local Page = {}
-Page.__index = Page
-
-function NexusLib:Page(options)
-    options = options or {}
-
-    local page = setmetatable({}, Page)
-    page.Window = self
-    page.Name = options.name or "Page"
-    page.Icon = options.icon
-    page.Sections = {}
-    page.Objects = {}
-    page.Visible = false
-
-    -- Tab Button
-    local tabX = self.TabStartX
-    for _, p in ipairs(self.Pages) do
-        tabX = tabX + (p.TabButton and p.TabButton.TextBounds.X + 20 or 0)
-    end
-
-    page.TabButton = Create("Text", {
-        Text = page.Name,
-        Size = 13,
-        Font = 2,
-        Position = Vector2.new(tabX, self.TabY),
-        Color = self.Theme.TextDim,
-        Outline = true,
-        OutlineColor = Color3.new(0, 0, 0),
+    -- Left sidebar
+    window.objects.sidebarOutline = create("Square", {
+        Size = Vector2.new(112, sizeY - 54),
+        Position = window.pos + Vector2.new(4, 28),
+        Color = t.outline,
+        Filled = true,
+        Thickness = 0,
         Visible = true,
-        ZIndex = 7
+        ZIndex = 5
     })
 
-    -- Tab click handler
-    table.insert(NexusLib.Connections, UserInputService.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 and self.Visible then
-            local mousePos = Vector2.new(Mouse.X, Mouse.Y)
-            local btnPos = page.TabButton.Position
-            local btnSize = page.TabButton.TextBounds
-
-            if mousePos.X >= btnPos.X and mousePos.X <= btnPos.X + btnSize.X + 10 and
-               mousePos.Y >= btnPos.Y - 2 and mousePos.Y <= btnPos.Y + btnSize.Y + 4 then
-                self:SelectPage(page)
-            end
-        end
-    end))
-
-    table.insert(self.Pages, page)
-
-    if #self.Pages == 1 then
-        self:SelectPage(page)
-    end
-
-    return page
-end
-
-function NexusLib:SelectPage(page)
-    for _, p in ipairs(self.Pages) do
-        local isSelected = (p == page)
-        p.TabButton.Color = isSelected and self.Accent or self.Theme.TextDim
-        p:SetVisible(isSelected and self.Visible)
-    end
-    self.CurrentPage = page
-end
-
-function Page:SetVisible(visible)
-    self.Visible = visible
-    self.TabButton.Visible = self.Window.Visible
-
-    for _, obj in pairs(self.Objects) do
-        obj.Visible = visible
-    end
-
-    for _, section in ipairs(self.Sections) do
-        section:SetVisible(visible)
-    end
-end
-
-function Page:UpdatePosition(delta)
-    for _, obj in pairs(self.Objects) do
-        if obj.Position then
-            obj.Position = obj.Position + delta
-        elseif obj.From then
-            obj.From = obj.From + delta
-            obj.To = obj.To + delta
-        end
-    end
-
-    for _, section in ipairs(self.Sections) do
-        section:UpdatePosition(delta)
-    end
-end
-
-function Page:RefreshTheme()
-    for _, section in ipairs(self.Sections) do
-        section:RefreshTheme()
-    end
-end
-
-function Page:Destroy()
-    for _, obj in pairs(self.Objects) do
-        obj:Remove()
-    end
-    self.TabButton:Remove()
-    for _, section in ipairs(self.Sections) do
-        section:Destroy()
-    end
-end
-
--- Section Class
-local Section = {}
-Section.__index = Section
-
-function Page:Section(options)
-    options = options or {}
-
-    local section = setmetatable({}, Section)
-    section.Page = self
-    section.Window = self.Window
-    section.Name = options.name or "Section"
-    section.Side = options.side or "left"
-    section.Elements = {}
-    section.Objects = {}
-    section.Visible = self.Visible
-
-    local win = self.Window
-    local columnWidth = (win.SizeX - 20) / 2 - 5
-    local startX = win.Position.X + (section.Side == "left" and 8 or columnWidth + 15)
-
-    -- Count existing sections on this side
-    local sectionCount = 0
-    local lastSectionBottom = win.ContentY
-    for _, s in ipairs(self.Sections) do
-        if s.Side == section.Side then
-            sectionCount = sectionCount + 1
-            lastSectionBottom = math.max(lastSectionBottom, s.BottomY or win.ContentY)
-        end
-    end
-
-    local sectionY = lastSectionBottom + (sectionCount > 0 and 8 or 0)
-
-    section.StartX = startX
-    section.StartY = sectionY
-    section.Width = columnWidth
-    section.CurrentY = sectionY + 22
-    section.BottomY = section.CurrentY
-
-    -- Section border with dashed style header
-    section.Objects.Border = Create("Square", {
-        Size = Vector2.new(columnWidth, 100),
-        Position = Vector2.new(startX, sectionY),
-        Color = win.Theme.SectionBorder,
-        Filled = false,
-        Thickness = 1,
-        Visible = self.Visible,
-        ZIndex = 8
-    })
-
-    -- Section title (inside border cutout style)
-    section.Objects.TitleBg = Create("Square", {
-        Size = Vector2.new(0, 14),
-        Position = Vector2.new(startX + 8, sectionY - 7),
-        Color = win.Theme.Background,
+    window.objects.sidebar = create("Square", {
+        Size = Vector2.new(110, sizeY - 56),
+        Position = window.pos + Vector2.new(5, 29),
+        Color = t.sidebar,
         Filled = true,
-        Visible = self.Visible,
-        ZIndex = 9
+        Thickness = 0,
+        Visible = true,
+        ZIndex = 6
     })
 
-    section.Objects.Title = Create("Text", {
-        Text = section.Name,
-        Size = 13,
-        Font = 2,
-        Position = Vector2.new(startX + 10, sectionY - 8),
-        Color = win.Theme.Text,
-        Outline = true,
-        OutlineColor = Color3.new(0, 0, 0),
-        Visible = self.Visible,
-        ZIndex = 10
-    })
-
-    -- Update title background size
-    section.Objects.TitleBg.Size = Vector2.new(section.Objects.Title.TextBounds.X + 6, 14)
-
-    table.insert(self.Sections, section)
-    return section
-end
-
-function Section:UpdateSize()
-    local height = math.max(50, self.CurrentY - self.StartY + 8)
-    self.Objects.Border.Size = Vector2.new(self.Width, height)
-    self.BottomY = self.StartY + height
-end
-
-function Section:SetVisible(visible)
-    self.Visible = visible
-    for _, obj in pairs(self.Objects) do
-        obj.Visible = visible
-    end
-    for _, element in ipairs(self.Elements) do
-        element:SetVisible(visible)
-    end
-end
-
-function Section:UpdatePosition(delta)
-    self.StartX = self.StartX + delta.X
-    self.StartY = self.StartY + delta.Y
-    self.CurrentY = self.CurrentY + delta.Y
-    self.BottomY = self.BottomY + delta.Y
-
-    for _, obj in pairs(self.Objects) do
-        if obj.Position then
-            obj.Position = obj.Position + delta
-        end
-    end
-
-    for _, element in ipairs(self.Elements) do
-        element:UpdatePosition(delta)
-    end
-end
-
-function Section:RefreshTheme()
-    local t = self.Window.Theme
-    self.Objects.Border.Color = t.SectionBorder
-    self.Objects.TitleBg.Color = t.Background
-    self.Objects.Title.Color = t.Text
-
-    for _, element in ipairs(self.Elements) do
-        if element.RefreshTheme then
-            element:RefreshTheme()
-        end
-    end
-end
-
-function Section:Destroy()
-    for _, obj in pairs(self.Objects) do
-        obj:Remove()
-    end
-    for _, element in ipairs(self.Elements) do
-        element:Destroy()
-    end
-end
-
--- Toggle Element
-function Section:Toggle(options)
-    options = options or {}
-
-    local toggle = {
-        Type = "Toggle",
-        Section = self,
-        Name = options.name or "Toggle",
-        Value = options.default or false,
-        Flag = options.flag,
-        Callback = options.callback or function() end,
-        Objects = {},
-        Visible = self.Visible
-    }
-
-    local win = self.Window
-    local y = self.CurrentY
-    local x = self.StartX + 8
-
-    -- Checkbox background
-    toggle.Objects.Box = Create("Square", {
-        Size = Vector2.new(12, 12),
-        Position = Vector2.new(x, y),
-        Color = toggle.Value and win.Accent or win.Theme.ToggleOff,
+    -- Bottom bar
+    window.objects.bottomOutline = create("Square", {
+        Size = Vector2.new(sizeX - 4, 22),
+        Position = window.pos + Vector2.new(2, sizeY - 24),
+        Color = t.outline,
         Filled = true,
-        Visible = self.Visible,
-        ZIndex = 11
+        Thickness = 0,
+        Visible = true,
+        ZIndex = 3
     })
 
-    toggle.Objects.BoxOutline = Create("Square", {
-        Size = Vector2.new(12, 12),
-        Position = Vector2.new(x, y),
-        Color = win.Theme.ElementBorder,
-        Filled = false,
-        Thickness = 1,
-        Visible = self.Visible,
-        ZIndex = 12
-    })
-
-    -- Label
-    toggle.Objects.Label = Create("Text", {
-        Text = toggle.Name,
-        Size = 13,
-        Font = 2,
-        Position = Vector2.new(x + 18, y - 1),
-        Color = win.Theme.Text,
-        Outline = true,
-        OutlineColor = Color3.new(0, 0, 0),
-        Visible = self.Visible,
-        ZIndex = 11
-    })
-
-    function toggle:Set(value)
-        self.Value = value
-        self.Objects.Box.Color = value and win.Accent or win.Theme.ToggleOff
-        if self.Flag then
-            NexusLib.Flags[self.Flag] = value
-        end
-        self.Callback(value)
-    end
-
-    function toggle:SetVisible(visible)
-        self.Visible = visible
-        for _, obj in pairs(self.Objects) do
-            obj.Visible = visible
-        end
-    end
-
-    function toggle:UpdatePosition(delta)
-        for _, obj in pairs(self.Objects) do
-            if obj.Position then
-                obj.Position = obj.Position + delta
-            end
-        end
-    end
-
-    function toggle:Destroy()
-        for _, obj in pairs(self.Objects) do
-            obj:Remove()
-        end
-    end
-
-    -- Click handler
-    table.insert(NexusLib.Connections, UserInputService.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 and toggle.Visible then
-            local mousePos = Vector2.new(Mouse.X, Mouse.Y)
-            local boxPos = toggle.Objects.Box.Position
-            local labelEnd = toggle.Objects.Label.Position.X + toggle.Objects.Label.TextBounds.X
-
-            if mousePos.Y >= boxPos.Y and mousePos.Y <= boxPos.Y + 14 and
-               mousePos.X >= boxPos.X and mousePos.X <= labelEnd then
-                toggle:Set(not toggle.Value)
-            end
-        end
-    end))
-
-    if toggle.Flag then
-        NexusLib.Flags[toggle.Flag] = toggle.Value
-    end
-
-    self.CurrentY = self.CurrentY + 20
-    self:UpdateSize()
-    table.insert(self.Elements, toggle)
-    return toggle
-end
-
--- Slider Element  
-function Section:Slider(options)
-    options = options or {}
-
-    local slider = {
-        Type = "Slider",
-        Section = self,
-        Name = options.name or "Slider",
-        Min = options.min or 0,
-        Max = options.max or 100,
-        Value = options.default or options.min or 0,
-        Increment = options.increment or 1,
-        Suffix = options.suffix or "",
-        Flag = options.flag,
-        Callback = options.callback or function() end,
-        Objects = {},
-        Visible = self.Visible,
-        Dragging = false
-    }
-
-    local win = self.Window
-    local y = self.CurrentY
-    local x = self.StartX + 8
-    local width = self.Width - 16
-
-    -- Label
-    slider.Objects.Label = Create("Text", {
-        Text = slider.Name .. ": " .. slider.Value .. slider.Suffix,
-        Size = 13,
-        Font = 2,
-        Position = Vector2.new(x, y),
-        Color = win.Theme.Text,
-        Outline = true,
-        OutlineColor = Color3.new(0, 0, 0),
-        Visible = self.Visible,
-        ZIndex = 11
-    })
-
-    -- Slider background
-    slider.Objects.SliderBg = Create("Square", {
-        Size = Vector2.new(width, 10),
-        Position = Vector2.new(x, y + 18),
-        Color = win.Theme.SliderBg,
+    window.objects.bottombar = create("Square", {
+        Size = Vector2.new(sizeX - 6, 20),
+        Position = window.pos + Vector2.new(3, sizeY - 23),
+        Color = t.topbar,
         Filled = true,
-        Visible = self.Visible,
-        ZIndex = 11
+        Thickness = 0,
+        Visible = true,
+        ZIndex = 4
     })
 
-    slider.Objects.SliderOutline = Create("Square", {
-        Size = Vector2.new(width, 10),
-        Position = Vector2.new(x, y + 18),
-        Color = win.Theme.ElementBorder,
-        Filled = false,
-        Thickness = 1,
-        Visible = self.Visible,
-        ZIndex = 12
-    })
-
-    -- Fill
-    local percent = (slider.Value - slider.Min) / (slider.Max - slider.Min)
-    slider.Objects.Fill = Create("Square", {
-        Size = Vector2.new(math.max(1, width * percent), 8),
-        Position = Vector2.new(x + 1, y + 19),
-        Color = win.Accent,
-        Filled = true,
-        Visible = self.Visible,
-        ZIndex = 13
-    })
-
-    -- Value text (right aligned)
-    slider.Objects.Value = Create("Text", {
-        Text = tostring(math.floor(slider.Value)) .. "/" .. slider.Max,
+    window.objects.version = create("Text", {
+        Text = "version: live",
         Size = 13,
         Font = 2,
-        Position = Vector2.new(x + width - 30, y + 17),
-        Color = win.Theme.Text,
+        Color = a,
         Outline = true,
         OutlineColor = Color3.new(0, 0, 0),
-        Center = true,
-        Visible = self.Visible,
-        ZIndex = 14
+        Position = window.pos + Vector2.new(8, sizeY - 20),
+        Visible = true,
+        ZIndex = 5
     })
 
-    function slider:Set(value)
-        value = math.clamp(value, self.Min, self.Max)
-        value = math.floor(value / self.Increment + 0.5) * self.Increment
-        self.Value = value
+    local tabStartX = textBounds(name, 13).X + 20
+    window.tabStartX = tabStartX
 
-        local percent = (value - self.Min) / (self.Max - self.Min)
-        self.Objects.Fill.Size = Vector2.new(math.max(1, (self.Section.Width - 18) * percent), 8)
-        self.Objects.Label.Text = self.Name .. ": " .. value .. self.Suffix
-        self.Objects.Value.Text = tostring(math.floor(value)) .. "/" .. self.Max
+    function window:UpdatePositions()
+        local p = window.pos
+        local o = window.objects
 
-        if self.Flag then
-            NexusLib.Flags[self.Flag] = value
-        end
-        self.Callback(value)
-    end
+        pcall(function() o.outline.Position = p end)
+        pcall(function() o.bg.Position = p + Vector2.new(1, 1) end)
+        pcall(function() o.topbar.Position = p + Vector2.new(2, 2) end)
+        pcall(function() o.accentLine.Position = p + Vector2.new(2, 24) end)
+        pcall(function() o.title.Position = p + Vector2.new(8, 5) end)
+        pcall(function() o.contentOutline.Position = p + Vector2.new(2, 26) end)
+        pcall(function() o.content.Position = p + Vector2.new(3, 27) end)
+        pcall(function() o.sidebarOutline.Position = p + Vector2.new(4, 28) end)
+        pcall(function() o.sidebar.Position = p + Vector2.new(5, 29) end)
+        pcall(function() o.bottomOutline.Position = p + Vector2.new(2, sizeY - 24) end)
+        pcall(function() o.bottombar.Position = p + Vector2.new(3, sizeY - 23) end)
+        pcall(function() o.version.Position = p + Vector2.new(8, sizeY - 20) end)
 
-    function slider:SetVisible(visible)
-        self.Visible = visible
-        for _, obj in pairs(self.Objects) do
-            obj.Visible = visible
-        end
-    end
-
-    function slider:UpdatePosition(delta)
-        for _, obj in pairs(self.Objects) do
-            if obj.Position then
-                obj.Position = obj.Position + delta
-            end
+        for _, page in pairs(window.pages) do
+            if page.UpdatePositions then page:UpdatePositions() end
         end
     end
 
-    function slider:Destroy()
-        for _, obj in pairs(self.Objects) do
-            obj:Remove()
+    function window:SetVisible(state)
+        library.open = state
+        for _, obj in pairs(window.objects) do
+            pcall(function() obj.Visible = state end)
+        end
+        for _, page in pairs(window.pages) do
+            if page.SetVisible then page:SetVisible(state and page == window.currentPage) end
         end
     end
 
-    -- Slider interaction
-    table.insert(NexusLib.Connections, UserInputService.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 and slider.Visible then
-            local mousePos = Vector2.new(Mouse.X, Mouse.Y)
-            local sliderPos = slider.Objects.SliderBg.Position
-            local sliderSize = slider.Objects.SliderBg.Size
-
-            if IsInBounds(sliderPos, sliderSize, mousePos) then
-                slider.Dragging = true
-            end
-        end
-    end))
-
-    table.insert(NexusLib.Connections, UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            slider.Dragging = false
-        end
-    end))
-
-    table.insert(NexusLib.Connections, RunService.RenderStepped:Connect(function()
-        if slider.Dragging and slider.Visible then
-            local mouseX = Mouse.X
-            local sliderX = slider.Objects.SliderBg.Position.X
-            local sliderWidth = slider.Objects.SliderBg.Size.X
-
-            local percent = math.clamp((mouseX - sliderX) / sliderWidth, 0, 1)
-            local value = slider.Min + (slider.Max - slider.Min) * percent
-            slider:Set(value)
-        end
-    end))
-
-    if slider.Flag then
-        NexusLib.Flags[slider.Flag] = slider.Value
+    function window:Toggle()
+        window:SetVisible(not library.open)
     end
 
-    self.CurrentY = self.CurrentY + 35
-    self:UpdateSize()
-    table.insert(self.Elements, slider)
-    return slider
-end
+    -- Page
+    function window:Page(config)
+        config = config or {}
+        local pageName = config.name or "Page"
 
--- Button Element
-function Section:Button(options)
-    options = options or {}
+        local page = {
+            name = pageName,
+            visible = false,
+            sections = {},
+            sectionButtons = {},
+            currentSection = nil,
+            objects = {},
+            window = window
+        }
 
-    local button = {
-        Type = "Button",
-        Section = self,
-        Name = options.name or "Button",
-        Callback = options.callback or function() end,
-        Objects = {},
-        Visible = self.Visible
-    }
-
-    local win = self.Window
-    local y = self.CurrentY
-    local x = self.StartX + 8
-    local width = self.Width - 16
-
-    button.Objects.Bg = Create("Square", {
-        Size = Vector2.new(width, 22),
-        Position = Vector2.new(x, y),
-        Color = win.Theme.Element,
-        Filled = true,
-        Visible = self.Visible,
-        ZIndex = 11
-    })
-
-    button.Objects.Outline = Create("Square", {
-        Size = Vector2.new(width, 22),
-        Position = Vector2.new(x, y),
-        Color = win.Theme.ElementBorder,
-        Filled = false,
-        Thickness = 1,
-        Visible = self.Visible,
-        ZIndex = 12
-    })
-
-    button.Objects.Label = Create("Text", {
-        Text = button.Name,
-        Size = 13,
-        Font = 2,
-        Position = Vector2.new(x + width/2, y + 4),
-        Color = win.Theme.Text,
-        Center = true,
-        Outline = true,
-        OutlineColor = Color3.new(0, 0, 0),
-        Visible = self.Visible,
-        ZIndex = 13
-    })
-
-    function button:SetVisible(visible)
-        self.Visible = visible
-        for _, obj in pairs(self.Objects) do
-            obj.Visible = visible
-        end
-    end
-
-    function button:UpdatePosition(delta)
-        for _, obj in pairs(self.Objects) do
-            if obj.Position then
-                obj.Position = obj.Position + delta
-            end
-        end
-    end
-
-    function button:Destroy()
-        for _, obj in pairs(self.Objects) do
-            obj:Remove()
-        end
-    end
-
-    table.insert(NexusLib.Connections, UserInputService.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 and button.Visible then
-            local mousePos = Vector2.new(Mouse.X, Mouse.Y)
-            local btnPos = button.Objects.Bg.Position
-            local btnSize = button.Objects.Bg.Size
-
-            if IsInBounds(btnPos, btnSize, mousePos) then
-                button.Objects.Bg.Color = win.Accent
-                button.Callback()
-                task.delay(0.1, function()
-                    if button.Objects.Bg then
-                        button.Objects.Bg.Color = win.Theme.Element
-                    end
-                end)
-            end
-        end
-    end))
-
-    self.CurrentY = self.CurrentY + 28
-    self:UpdateSize()
-    table.insert(self.Elements, button)
-    return button
-end
-
--- Dropdown Element
-function Section:Dropdown(options)
-    options = options or {}
-
-    local dropdown = {
-        Type = "Dropdown",
-        Section = self,
-        Name = options.name or "Dropdown",
-        Items = options.items or {},
-        Value = options.default or (options.items and options.items[1]) or "",
-        Multi = options.multi or false,
-        Flag = options.flag,
-        Callback = options.callback or function() end,
-        Objects = {},
-        OptionObjects = {},
-        Visible = self.Visible,
-        Open = false
-    }
-
-    if dropdown.Multi then
-        dropdown.Value = options.default or {}
-    end
-
-    local win = self.Window
-    local y = self.CurrentY
-    local x = self.StartX + 8
-    local width = self.Width - 16
-
-    -- Label
-    dropdown.Objects.Label = Create("Text", {
-        Text = dropdown.Name,
-        Size = 13,
-        Font = 2,
-        Position = Vector2.new(x, y),
-        Color = win.Theme.Text,
-        Outline = true,
-        OutlineColor = Color3.new(0, 0, 0),
-        Visible = self.Visible,
-        ZIndex = 11
-    })
-
-    -- Dropdown box
-    dropdown.Objects.Box = Create("Square", {
-        Size = Vector2.new(width, 20),
-        Position = Vector2.new(x, y + 18),
-        Color = win.Theme.Element,
-        Filled = true,
-        Visible = self.Visible,
-        ZIndex = 11
-    })
-
-    dropdown.Objects.BoxOutline = Create("Square", {
-        Size = Vector2.new(width, 20),
-        Position = Vector2.new(x, y + 18),
-        Color = win.Theme.ElementBorder,
-        Filled = false,
-        Thickness = 1,
-        Visible = self.Visible,
-        ZIndex = 12
-    })
-
-    local displayText = dropdown.Multi and table.concat(dropdown.Value, ", ") or dropdown.Value
-    dropdown.Objects.Selected = Create("Text", {
-        Text = displayText ~= "" and displayText or "None",
-        Size = 13,
-        Font = 2,
-        Position = Vector2.new(x + 5, y + 21),
-        Color = win.Theme.Text,
-        Outline = true,
-        OutlineColor = Color3.new(0, 0, 0),
-        Visible = self.Visible,
-        ZIndex = 13
-    })
-
-    -- Arrow indicator
-    dropdown.Objects.Arrow = Create("Text", {
-        Text = "+",
-        Size = 13,
-        Font = 2,
-        Position = Vector2.new(x + width - 15, y + 20),
-        Color = win.Theme.TextDim,
-        Outline = true,
-        OutlineColor = Color3.new(0, 0, 0),
-        Visible = self.Visible,
-        ZIndex = 13
-    })
-
-    function dropdown:UpdateDisplay()
-        local text
-        if self.Multi then
-            text = #self.Value > 0 and table.concat(self.Value, ", ") or "None"
-        else
-            text = self.Value ~= "" and self.Value or "None"
-        end
-        self.Objects.Selected.Text = text
-    end
-
-    function dropdown:Set(value)
-        if self.Multi then
-            if type(value) == "table" then
-                self.Value = value
-            else
-                local idx = table.find(self.Value, value)
-                if idx then
-                    table.remove(self.Value, idx)
-                else
-                    table.insert(self.Value, value)
-                end
-            end
-        else
-            self.Value = value
-            self:CloseDropdown()
+        local tabX = window.tabStartX
+        for _, p in pairs(window.pages) do
+            tabX = tabX + textBounds(p.name, 13).X + 16
         end
 
-        self:UpdateDisplay()
+        local tabWidth = textBounds(pageName, 13).X + 12
 
-        if self.Flag then
-            NexusLib.Flags[self.Flag] = self.Value
-        end
-        self.Callback(self.Value)
-    end
+        page.objects.tabBg = create("Square", {
+            Size = Vector2.new(tabWidth, 19),
+            Position = window.pos + Vector2.new(tabX, 4),
+            Color = t.section,
+            Filled = true,
+            Visible = false,
+            ZIndex = 4
+        })
 
-    function dropdown:OpenDropdown()
-        self.Open = true
-        self.Objects.Arrow.Text = "-"
+        page.objects.tabAccent = create("Square", {
+            Size = Vector2.new(tabWidth - 4, 1),
+            Position = window.pos + Vector2.new(tabX + 2, 5),
+            Color = a,
+            Filled = true,
+            Visible = false,
+            ZIndex = 5
+        })
 
-        local optY = self.Objects.Box.Position.Y + 22
-        for i, item in ipairs(self.Items) do
-            local isSelected = self.Multi and table.find(self.Value, item) or self.Value == item
-
-            local optBg = Create("Square", {
-                Size = Vector2.new(width, 18),
-                Position = Vector2.new(x, optY),
-                Color = win.Theme.Element,
-                Filled = true,
-                Visible = self.Visible,
-                ZIndex = 50
-            })
-
-            local optText = Create("Text", {
-                Text = item,
-                Size = 13,
-                Font = 2,
-                Position = Vector2.new(x + 5, optY + 2),
-                Color = isSelected and win.Accent or win.Theme.Text,
-                Outline = true,
-                OutlineColor = Color3.new(0, 0, 0),
-                Visible = self.Visible,
-                ZIndex = 51
-            })
-
-            table.insert(self.OptionObjects, {Bg = optBg, Text = optText, Item = item})
-            optY = optY + 18
-        end
-    end
-
-    function dropdown:CloseDropdown()
-        self.Open = false
-        self.Objects.Arrow.Text = "+"
-
-        for _, opt in ipairs(self.OptionObjects) do
-            opt.Bg:Remove()
-            opt.Text:Remove()
-        end
-        self.OptionObjects = {}
-    end
-
-    function dropdown:SetVisible(visible)
-        self.Visible = visible
-        for _, obj in pairs(self.Objects) do
-            obj.Visible = visible
-        end
-        if not visible then
-            self:CloseDropdown()
-        end
-    end
-
-    function dropdown:UpdatePosition(delta)
-        for _, obj in pairs(self.Objects) do
-            if obj.Position then
-                obj.Position = obj.Position + delta
-            end
-        end
-    end
-
-    function dropdown:Destroy()
-        self:CloseDropdown()
-        for _, obj in pairs(self.Objects) do
-            obj:Remove()
-        end
-    end
-
-    -- Click handler
-    table.insert(NexusLib.Connections, UserInputService.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 and dropdown.Visible then
-            local mousePos = Vector2.new(Mouse.X, Mouse.Y)
-            local boxPos = dropdown.Objects.Box.Position
-            local boxSize = dropdown.Objects.Box.Size
-
-            if IsInBounds(boxPos, boxSize, mousePos) then
-                if dropdown.Open then
-                    dropdown:CloseDropdown()
-                else
-                    dropdown:OpenDropdown()
-                end
-            elseif dropdown.Open then
-                for _, opt in ipairs(dropdown.OptionObjects) do
-                    if IsInBounds(opt.Bg.Position, opt.Bg.Size, mousePos) then
-                        dropdown:Set(opt.Item)
-                        return
-                    end
-                end
-                dropdown:CloseDropdown()
-            end
-        end
-    end))
-
-    if dropdown.Flag then
-        NexusLib.Flags[dropdown.Flag] = dropdown.Value
-    end
-
-    self.CurrentY = self.CurrentY + 45
-    self:UpdateSize()
-    table.insert(self.Elements, dropdown)
-    return dropdown
-end
-
--- Keybind Element
-function Section:Keybind(options)
-    options = options or {}
-
-    local keybind = {
-        Type = "Keybind",
-        Section = self,
-        Name = options.name or "Keybind",
-        Value = options.default or Enum.KeyCode.Unknown,
-        Flag = options.flag,
-        Callback = options.callback or function() end,
-        Objects = {},
-        Visible = self.Visible,
-        Listening = false
-    }
-
-    local win = self.Window
-    local y = self.CurrentY
-    local x = self.StartX + 8
-    local width = self.Width - 16
-
-    keybind.Objects.Label = Create("Text", {
-        Text = keybind.Name,
-        Size = 13,
-        Font = 2,
-        Position = Vector2.new(x, y),
-        Color = win.Theme.Text,
-        Outline = true,
-        OutlineColor = Color3.new(0, 0, 0),
-        Visible = self.Visible,
-        ZIndex = 11
-    })
-
-    keybind.Objects.KeyBox = Create("Square", {
-        Size = Vector2.new(45, 18),
-        Position = Vector2.new(x + width - 50, y - 2),
-        Color = win.Theme.Element,
-        Filled = true,
-        Visible = self.Visible,
-        ZIndex = 11
-    })
-
-    keybind.Objects.KeyOutline = Create("Square", {
-        Size = Vector2.new(45, 18),
-        Position = Vector2.new(x + width - 50, y - 2),
-        Color = win.Theme.ElementBorder,
-        Filled = false,
-        Thickness = 1,
-        Visible = self.Visible,
-        ZIndex = 12
-    })
-
-    keybind.Objects.KeyText = Create("Text", {
-        Text = "[" .. GetKeyName(keybind.Value) .. "]",
-        Size = 13,
-        Font = 2,
-        Position = Vector2.new(x + width - 28, y),
-        Color = win.Theme.TextDim,
-        Center = true,
-        Outline = true,
-        OutlineColor = Color3.new(0, 0, 0),
-        Visible = self.Visible,
-        ZIndex = 13
-    })
-
-    function keybind:Set(key)
-        self.Value = key
-        self.Objects.KeyText.Text = "[" .. GetKeyName(key) .. "]"
-        if self.Flag then
-            NexusLib.Flags[self.Flag] = key
-        end
-    end
-
-    function keybind:SetVisible(visible)
-        self.Visible = visible
-        for _, obj in pairs(self.Objects) do
-            obj.Visible = visible
-        end
-    end
-
-    function keybind:UpdatePosition(delta)
-        for _, obj in pairs(self.Objects) do
-            if obj.Position then
-                obj.Position = obj.Position + delta
-            end
-        end
-    end
-
-    function keybind:Destroy()
-        for _, obj in pairs(self.Objects) do
-            obj:Remove()
-        end
-    end
-
-    -- Click to rebind
-    table.insert(NexusLib.Connections, UserInputService.InputBegan:Connect(function(input)
-        if keybind.Listening then
-            if input.UserInputType == Enum.UserInputType.Keyboard then
-                keybind:Set(input.KeyCode)
-                keybind.Listening = false
-                keybind.Objects.KeyBox.Color = win.Theme.Element
-            elseif input.UserInputType == Enum.UserInputType.MouseButton1 or
-                   input.UserInputType == Enum.UserInputType.MouseButton2 then
-                keybind:Set(input.UserInputType)
-                keybind.Listening = false
-                keybind.Objects.KeyBox.Color = win.Theme.Element
-            end
-        elseif input.UserInputType == Enum.UserInputType.MouseButton1 and keybind.Visible then
-            local mousePos = Vector2.new(Mouse.X, Mouse.Y)
-            local boxPos = keybind.Objects.KeyBox.Position
-            local boxSize = keybind.Objects.KeyBox.Size
-
-            if IsInBounds(boxPos, boxSize, mousePos) then
-                keybind.Listening = true
-                keybind.Objects.KeyText.Text = "[...]"
-                keybind.Objects.KeyBox.Color = win.Accent
-            end
-        end
-
-        -- Fire callback when key pressed
-        if not keybind.Listening and keybind.Value then
-            if (input.KeyCode and input.KeyCode == keybind.Value) or
-               (input.UserInputType and input.UserInputType == keybind.Value) then
-                keybind.Callback(keybind.Value)
-            end
-        end
-    end))
-
-    if keybind.Flag then
-        NexusLib.Flags[keybind.Flag] = keybind.Value
-    end
-
-    self.CurrentY = self.CurrentY + 22
-    self:UpdateSize()
-    table.insert(self.Elements, keybind)
-    return keybind
-end
-
--- Textbox Element
-function Section:Textbox(options)
-    options = options or {}
-
-    local textbox = {
-        Type = "Textbox",
-        Section = self,
-        Name = options.name or "",
-        Value = options.default or "",
-        Placeholder = options.placeholder or "Enter text...",
-        Flag = options.flag,
-        Callback = options.callback or function() end,
-        Objects = {},
-        Visible = self.Visible,
-        Focused = false
-    }
-
-    local win = self.Window
-    local y = self.CurrentY
-    local x = self.StartX + 8
-    local width = self.Width - 16
-
-    local hasLabel = textbox.Name ~= ""
-
-    if hasLabel then
-        textbox.Objects.Label = Create("Text", {
-            Text = textbox.Name,
+        page.objects.tabText = create("Text", {
+            Text = pageName,
             Size = 13,
             Font = 2,
-            Position = Vector2.new(x, y),
-            Color = win.Theme.Text,
+            Color = t.dimtext,
             Outline = true,
             OutlineColor = Color3.new(0, 0, 0),
-            Visible = self.Visible,
-            ZIndex = 11
+            Position = window.pos + Vector2.new(tabX + 6, 7),
+            Visible = true,
+            ZIndex = 6
         })
-        y = y + 18
-    end
 
-    textbox.Objects.Box = Create("Square", {
-        Size = Vector2.new(width, 22),
-        Position = Vector2.new(x, y),
-        Color = win.Theme.Element,
-        Filled = true,
-        Visible = self.Visible,
-        ZIndex = 11
-    })
+        page.tabX = tabX
+        page.tabWidth = tabWidth
 
-    textbox.Objects.Outline = Create("Square", {
-        Size = Vector2.new(width, 22),
-        Position = Vector2.new(x, y),
-        Color = win.Theme.ElementBorder,
-        Filled = false,
-        Thickness = 1,
-        Visible = self.Visible,
-        ZIndex = 12
-    })
+        function page:UpdatePositions()
+            local p = window.pos
+            pcall(function() page.objects.tabBg.Position = p + Vector2.new(page.tabX, 4) end)
+            pcall(function() page.objects.tabAccent.Position = p + Vector2.new(page.tabX + 2, 5) end)
+            pcall(function() page.objects.tabText.Position = p + Vector2.new(page.tabX + 6, 7) end)
 
-    textbox.Objects.Text = Create("Text", {
-        Text = textbox.Value ~= "" and textbox.Value or textbox.Placeholder,
-        Size = 13,
-        Font = 2,
-        Position = Vector2.new(x + 5, y + 4),
-        Color = textbox.Value ~= "" and win.Theme.Text or win.Theme.TextDim,
-        Outline = true,
-        OutlineColor = Color3.new(0, 0, 0),
-        Visible = self.Visible,
-        ZIndex = 13
-    })
-
-    textbox.InputY = y
-
-    function textbox:Set(value)
-        self.Value = value
-        self.Objects.Text.Text = value ~= "" and value or self.Placeholder
-        self.Objects.Text.Color = value ~= "" and win.Theme.Text or win.Theme.TextDim
-        if self.Flag then
-            NexusLib.Flags[self.Flag] = value
-        end
-        self.Callback(value)
-    end
-
-    function textbox:SetVisible(visible)
-        self.Visible = visible
-        for _, obj in pairs(self.Objects) do
-            obj.Visible = visible
-        end
-    end
-
-    function textbox:UpdatePosition(delta)
-        for _, obj in pairs(self.Objects) do
-            if obj.Position then
-                obj.Position = obj.Position + delta
+            for _, btn in pairs(page.sectionButtons) do
+                if btn.UpdatePositions then btn:UpdatePositions() end
+            end
+            for _, section in pairs(page.sections) do
+                if section.UpdatePositions then section:UpdatePositions() end
             end
         end
-        self.InputY = self.InputY + delta.Y
-    end
 
-    function textbox:Destroy()
-        for _, obj in pairs(self.Objects) do
-            obj:Remove()
+        function page:SetVisible(state)
+            page.visible = state
+            pcall(function() page.objects.tabBg.Visible = state end)
+            pcall(function() page.objects.tabAccent.Visible = state end)
+            pcall(function() page.objects.tabText.Color = state and library.accent or t.dimtext end)
+
+            for _, btn in pairs(page.sectionButtons) do
+                if btn.SetVisible then btn:SetVisible(state) end
+            end
+            for _, section in pairs(page.sections) do
+                if section.SetVisible then section:SetVisible(state and section == page.currentSection) end
+            end
         end
-    end
 
-    -- Text input simulation
-    table.insert(NexusLib.Connections, UserInputService.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 and textbox.Visible then
-            local mousePos = Vector2.new(Mouse.X, Mouse.Y)
-            local boxPos = textbox.Objects.Box.Position
-            local boxSize = textbox.Objects.Box.Size
+        function page:Show()
+            for _, p in pairs(window.pages) do
+                if p.SetVisible then p:SetVisible(false) end
+            end
+            page:SetVisible(true)
+            window.currentPage = page
 
-            if IsInBounds(boxPos, boxSize, mousePos) then
-                textbox.Focused = true
-                textbox.Objects.Outline.Color = win.Accent
-                textbox.Objects.Text.Text = textbox.Value .. "|"
-            else
-                if textbox.Focused then
-                    textbox.Focused = false
-                    textbox.Objects.Outline.Color = win.Theme.ElementBorder
-                    textbox.Objects.Text.Text = textbox.Value ~= "" and textbox.Value or textbox.Placeholder
-                    textbox.Objects.Text.Color = textbox.Value ~= "" and win.Theme.Text or win.Theme.TextDim
+            if page.currentSection then
+                page.currentSection:SetVisible(true)
+            elseif page.sections[1] then
+                page.sections[1]:Show()
+            end
+        end
+
+        -- Section
+        function page:Section(config)
+            config = config or {}
+            local sectionName = config.name or "Section"
+            local leftTitle = config.left or "general"
+            local rightTitle = config.right or "general"
+
+            local section = {
+                name = sectionName,
+                leftTitle = leftTitle,
+                rightTitle = rightTitle,
+                visible = false,
+                leftElements = {},
+                rightElements = {},
+                leftOffset = 26,
+                rightOffset = 26,
+                objects = {},
+                page = page,
+                window = window
+            }
+
+            local btnY = 8 + (#page.sections * 22)
+            local sectionBtn = {
+                yOffset = btnY,
+                objects = {}
+            }
+
+            sectionBtn.objects.accent = create("Square", {
+                Size = Vector2.new(1, 18),
+                Position = window.pos + Vector2.new(6, 30 + btnY),
+                Color = a,
+                Filled = true,
+                Visible = false,
+                ZIndex = 7
+            })
+
+            sectionBtn.objects.text = create("Text", {
+                Text = sectionName,
+                Size = 13,
+                Font = 2,
+                Color = t.dimtext,
+                Outline = true,
+                OutlineColor = Color3.new(0, 0, 0),
+                Position = window.pos + Vector2.new(14, 32 + btnY),
+                Visible = page.visible,
+                ZIndex = 7
+            })
+
+            function sectionBtn:UpdatePositions()
+                local p = window.pos
+                pcall(function() sectionBtn.objects.accent.Position = p + Vector2.new(6, 30 + sectionBtn.yOffset) end)
+                pcall(function() sectionBtn.objects.text.Position = p + Vector2.new(14, 32 + sectionBtn.yOffset) end)
+            end
+
+            function sectionBtn:SetVisible(state)
+                pcall(function() sectionBtn.objects.accent.Visible = state and section == page.currentSection end)
+                pcall(function() sectionBtn.objects.text.Visible = state end)
+                pcall(function() sectionBtn.objects.text.Color = (section == page.currentSection) and Color3.new(1, 1, 1) or t.dimtext end)
+            end
+
+            table.insert(page.sectionButtons, sectionBtn)
+            section.button = sectionBtn
+
+            local contentX = 120
+            local contentWidth = (sizeX - 130) / 2 - 8
+            local contentY = 30
+            local rightX = contentX + contentWidth + 10
+
+            -- Left column
+            section.objects.leftOutline = create("Square", {
+                Size = Vector2.new(contentWidth + 2, sizeY - 84),
+                Position = window.pos + Vector2.new(contentX, contentY),
+                Color = t.outline,
+                Filled = true,
+                Visible = false,
+                ZIndex = 5
+            })
+
+            section.objects.left = create("Square", {
+                Size = Vector2.new(contentWidth, sizeY - 86),
+                Position = window.pos + Vector2.new(contentX + 1, contentY + 1),
+                Color = t.sidebar,
+                Filled = true,
+                Visible = false,
+                ZIndex = 6
+            })
+
+            section.objects.leftHeader = create("Square", {
+                Size = Vector2.new(contentWidth, 20),
+                Position = window.pos + Vector2.new(contentX + 1, contentY + 1),
+                Color = t.sectionheader,
+                Filled = true,
+                Visible = false,
+                ZIndex = 7
+            })
+
+            section.objects.leftHeaderLine = create("Square", {
+                Size = Vector2.new(contentWidth, 1),
+                Position = window.pos + Vector2.new(contentX + 1, contentY + 21),
+                Color = t.outline,
+                Filled = true,
+                Visible = false,
+                ZIndex = 8
+            })
+
+            section.objects.leftTitle = create("Text", {
+                Text = leftTitle,
+                Size = 13,
+                Font = 2,
+                Color = t.dimtext,
+                Outline = true,
+                OutlineColor = Color3.new(0, 0, 0),
+                Position = window.pos + Vector2.new(contentX + 8, contentY + 4),
+                Visible = false,
+                ZIndex = 8
+            })
+
+            -- Right column
+            section.objects.rightOutline = create("Square", {
+                Size = Vector2.new(contentWidth + 2, sizeY - 84),
+                Position = window.pos + Vector2.new(rightX, contentY),
+                Color = t.outline,
+                Filled = true,
+                Visible = false,
+                ZIndex = 5
+            })
+
+            section.objects.right = create("Square", {
+                Size = Vector2.new(contentWidth, sizeY - 86),
+                Position = window.pos + Vector2.new(rightX + 1, contentY + 1),
+                Color = t.sidebar,
+                Filled = true,
+                Visible = false,
+                ZIndex = 6
+            })
+
+            section.objects.rightHeader = create("Square", {
+                Size = Vector2.new(contentWidth, 20),
+                Position = window.pos + Vector2.new(rightX + 1, contentY + 1),
+                Color = t.sectionheader,
+                Filled = true,
+                Visible = false,
+                ZIndex = 7
+            })
+
+            section.objects.rightHeaderLine = create("Square", {
+                Size = Vector2.new(contentWidth, 1),
+                Position = window.pos + Vector2.new(rightX + 1, contentY + 21),
+                Color = t.outline,
+                Filled = true,
+                Visible = false,
+                ZIndex = 8
+            })
+
+            section.objects.rightTitle = create("Text", {
+                Text = rightTitle,
+                Size = 13,
+                Font = 2,
+                Color = t.dimtext,
+                Outline = true,
+                OutlineColor = Color3.new(0, 0, 0),
+                Position = window.pos + Vector2.new(rightX + 8, contentY + 4),
+                Visible = false,
+                ZIndex = 8
+            })
+
+            section.contentX = contentX
+            section.rightX = rightX
+            section.contentY = contentY
+            section.contentWidth = contentWidth
+
+            function section:UpdatePositions()
+                local p = window.pos
+                local cX = section.contentX
+                local rX = section.rightX
+                local cY = section.contentY
+
+                pcall(function() section.objects.leftOutline.Position = p + Vector2.new(cX, cY) end)
+                pcall(function() section.objects.left.Position = p + Vector2.new(cX + 1, cY + 1) end)
+                pcall(function() section.objects.leftHeader.Position = p + Vector2.new(cX + 1, cY + 1) end)
+                pcall(function() section.objects.leftHeaderLine.Position = p + Vector2.new(cX + 1, cY + 21) end)
+                pcall(function() section.objects.leftTitle.Position = p + Vector2.new(cX + 8, cY + 4) end)
+                pcall(function() section.objects.rightOutline.Position = p + Vector2.new(rX, cY) end)
+                pcall(function() section.objects.right.Position = p + Vector2.new(rX + 1, cY + 1) end)
+                pcall(function() section.objects.rightHeader.Position = p + Vector2.new(rX + 1, cY + 1) end)
+                pcall(function() section.objects.rightHeaderLine.Position = p + Vector2.new(rX + 1, cY + 21) end)
+                pcall(function() section.objects.rightTitle.Position = p + Vector2.new(rX + 8, cY + 4) end)
+
+                for _, elem in pairs(section.leftElements) do
+                    if elem.UpdatePositions then elem:UpdatePositions() end
+                end
+                for _, elem in pairs(section.rightElements) do
+                    if elem.UpdatePositions then elem:UpdatePositions() end
                 end
             end
-        elseif input.UserInputType == Enum.UserInputType.Keyboard and textbox.Focused then
-            local key = input.KeyCode.Name
 
-            if input.KeyCode == Enum.KeyCode.Return then
-                textbox.Focused = false
-                textbox.Objects.Outline.Color = win.Theme.ElementBorder
-                textbox:Set(textbox.Value)
-            elseif input.KeyCode == Enum.KeyCode.Backspace then
-                textbox.Value = textbox.Value:sub(1, -2)
-                textbox.Objects.Text.Text = textbox.Value .. "|"
-            elseif #key == 1 then
-                local char = UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) and key:upper() or key:lower()
-                textbox.Value = textbox.Value .. char
-                textbox.Objects.Text.Text = textbox.Value .. "|"
-            elseif input.KeyCode == Enum.KeyCode.Space then
-                textbox.Value = textbox.Value .. " "
-                textbox.Objects.Text.Text = textbox.Value .. "|"
+            function section:SetVisible(state)
+                section.visible = state
+                for _, obj in pairs(section.objects) do
+                    pcall(function() obj.Visible = state end)
+                end
+                pcall(function() section.button.objects.accent.Visible = state end)
+                pcall(function() section.button.objects.text.Color = state and Color3.new(1, 1, 1) or t.dimtext end)
+
+                for _, elem in pairs(section.leftElements) do
+                    if elem.SetVisible then elem:SetVisible(state) end
+                end
+                for _, elem in pairs(section.rightElements) do
+                    if elem.SetVisible then elem:SetVisible(state) end
+                end
+            end
+
+            function section:Show()
+                for _, s in pairs(page.sections) do
+                    if s.SetVisible then s:SetVisible(false) end
+                end
+                section:SetVisible(true)
+                page.currentSection = section
+            end
+
+            -- TOGGLE
+            function section:Toggle(config)
+                config = config or {}
+                local toggleName = config.name or "Toggle"
+                local side = (config.side or "left"):lower()
+                local default = config.default or false
+                local flag = config.flag
+                local callback = config.callback or function() end
+
+                local elements = side == "left" and section.leftElements or section.rightElements
+                local offset = side == "left" and section.leftOffset or section.rightOffset
+                local baseX = side == "left" and (section.contentX + 10) or (section.rightX + 10)
+                local elemWidth = section.contentWidth - 20
+
+                local toggle = {
+                    value = default,
+                    side = side,
+                    yOffset = offset,
+                    objects = {}
+                }
+
+                toggle.objects.box = create("Square", {
+                    Size = Vector2.new(6, 6),
+                    Position = window.pos + Vector2.new(baseX, section.contentY + offset + 4),
+                    Color = t.outline,
+                    Filled = true,
+                    Visible = section.visible,
+                    ZIndex = 9
+                })
+
+                toggle.objects.fill = create("Square", {
+                    Size = Vector2.new(4, 4),
+                    Position = window.pos + Vector2.new(baseX + 1, section.contentY + offset + 5),
+                    Color = default and a or t.elementbg,
+                    Filled = true,
+                    Visible = section.visible,
+                    ZIndex = 10
+                })
+
+                toggle.objects.label = create("Text", {
+                    Text = toggleName,
+                    Size = 13,
+                    Font = 2,
+                    Color = default and t.text or t.dimtext,
+                    Outline = true,
+                    OutlineColor = Color3.new(0, 0, 0),
+                    Position = window.pos + Vector2.new(baseX + 15, section.contentY + offset + 1),
+                    Visible = section.visible,
+                    ZIndex = 9
+                })
+
+                toggle.baseX = baseX
+                toggle.baseY = section.contentY + offset
+                toggle.width = elemWidth
+
+                function toggle:UpdatePositions()
+                    local p = window.pos
+                    pcall(function() toggle.objects.box.Position = p + Vector2.new(toggle.baseX, toggle.baseY + 4) end)
+                    pcall(function() toggle.objects.fill.Position = p + Vector2.new(toggle.baseX + 1, toggle.baseY + 5) end)
+                    pcall(function() toggle.objects.label.Position = p + Vector2.new(toggle.baseX + 15, toggle.baseY + 1) end)
+                end
+
+                function toggle:SetVisible(state)
+                    for _, obj in pairs(toggle.objects) do
+                        pcall(function() obj.Visible = state end)
+                    end
+                end
+
+                function toggle:Set(value)
+                    toggle.value = value
+                    pcall(function() toggle.objects.fill.Color = value and a or t.elementbg end)
+                    pcall(function() toggle.objects.label.Color = value and t.text or t.dimtext end)
+                    if flag then library.flags[flag] = value end
+                    pcall(callback, value)
+                end
+
+                function toggle:Get() return toggle.value end
+
+                table.insert(library.connections, UIS.InputBegan:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 and library.open and section.visible then
+                        local pos = toggle.objects.box.Position
+                        if mouseOver(pos.X - 2, pos.Y - 2, toggle.width, 14) then
+                            toggle:Set(not toggle.value)
+                        end
+                    end
+                end))
+
+                if flag then
+                    library.flags[flag] = default
+                    library.pointers[flag] = toggle
+                end
+                if default then pcall(callback, default) end
+
+                if side == "left" then
+                    section.leftOffset = section.leftOffset + 18
+                else
+                    section.rightOffset = section.rightOffset + 18
+                end
+                table.insert(elements, toggle)
+                return toggle
+            end
+
+            -- SLIDER
+            function section:Slider(config)
+                config = config or {}
+                local sliderName = config.name or "Slider"
+                local side = (config.side or "left"):lower()
+                local min = config.min or 0
+                local max = config.max or 100
+                local default = config.default or min
+                local increment = config.increment or 1
+                local suffix = config.suffix or ""
+                local flag = config.flag
+                local callback = config.callback or function() end
+
+                local elements = side == "left" and section.leftElements or section.rightElements
+                local offset = side == "left" and section.leftOffset or section.rightOffset
+                local baseX = side == "left" and (section.contentX + 10) or (section.rightX + 10)
+                local sliderWidth = section.contentWidth - 20
+
+                local slider = {
+                    value = default,
+                    min = min,
+                    max = max,
+                    dragging = false,
+                    side = side,
+                    yOffset = offset,
+                    objects = {}
+                }
+
+                slider.objects.label = create("Text", {
+                    Text = sliderName,
+                    Size = 13,
+                    Font = 2,
+                    Color = t.dimtext,
+                    Outline = true,
+                    OutlineColor = Color3.new(0, 0, 0),
+                    Position = window.pos + Vector2.new(baseX, section.contentY + offset),
+                    Visible = section.visible,
+                    ZIndex = 9
+                })
+
+                local valText = tostring(default) .. suffix
+                slider.objects.value = create("Text", {
+                    Text = valText,
+                    Size = 13,
+                    Font = 2,
+                    Color = t.text,
+                    Outline = true,
+                    OutlineColor = Color3.new(0, 0, 0),
+                    Position = window.pos + Vector2.new(baseX + sliderWidth - textBounds(valText, 13).X, section.contentY + offset),
+                    Visible = section.visible,
+                    ZIndex = 9
+                })
+
+                slider.objects.trackOutline = create("Square", {
+                    Size = Vector2.new(sliderWidth, 10),
+                    Position = window.pos + Vector2.new(baseX, section.contentY + offset + 16),
+                    Color = t.outline,
+                    Filled = true,
+                    Visible = section.visible,
+                    ZIndex = 9
+                })
+
+                slider.objects.track = create("Square", {
+                    Size = Vector2.new(sliderWidth - 2, 8),
+                    Position = window.pos + Vector2.new(baseX + 1, section.contentY + offset + 17),
+                    Color = t.elementbg,
+                    Filled = true,
+                    Visible = section.visible,
+                    ZIndex = 10
+                })
+
+                local pct = (default - min) / (max - min)
+                slider.objects.fill = create("Square", {
+                    Size = Vector2.new(math.max((sliderWidth - 2) * pct, 0), 8),
+                    Position = window.pos + Vector2.new(baseX + 1, section.contentY + offset + 17),
+                    Color = a,
+                    Filled = true,
+                    Visible = section.visible,
+                    ZIndex = 11
+                })
+
+                slider.baseX = baseX
+                slider.baseY = section.contentY + offset
+                slider.width = sliderWidth
+                slider.suffix = suffix
+
+                function slider:UpdatePositions()
+                    local p = window.pos
+                    local valText = tostring(slider.value) .. slider.suffix
+                    pcall(function() slider.objects.label.Position = p + Vector2.new(slider.baseX, slider.baseY) end)
+                    pcall(function() slider.objects.value.Position = p + Vector2.new(slider.baseX + slider.width - textBounds(valText, 13).X, slider.baseY) end)
+                    pcall(function() slider.objects.trackOutline.Position = p + Vector2.new(slider.baseX, slider.baseY + 16) end)
+                    pcall(function() slider.objects.track.Position = p + Vector2.new(slider.baseX + 1, slider.baseY + 17) end)
+                    pcall(function() slider.objects.fill.Position = p + Vector2.new(slider.baseX + 1, slider.baseY + 17) end)
+                end
+
+                function slider:SetVisible(state)
+                    for _, obj in pairs(slider.objects) do
+                        pcall(function() obj.Visible = state end)
+                    end
+                end
+
+                function slider:Set(value)
+                    value = math.clamp(value, min, max)
+                    value = math.floor(value / increment + 0.5) * increment
+                    slider.value = value
+
+                    local pct = (value - min) / (max - min)
+                    pcall(function() slider.objects.fill.Size = Vector2.new(math.max((slider.width - 2) * pct, 0), 8) end)
+
+                    local valText = tostring(value) .. slider.suffix
+                    pcall(function() slider.objects.value.Text = valText end)
+                    pcall(function() slider.objects.value.Position = window.pos + Vector2.new(slider.baseX + slider.width - textBounds(valText, 13).X, slider.baseY) end)
+
+                    if flag then library.flags[flag] = value end
+                    pcall(callback, value)
+                end
+
+                function slider:Get() return slider.value end
+
+                table.insert(library.connections, UIS.InputBegan:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 and library.open and section.visible then
+                        local pos = slider.objects.trackOutline.Position
+                        if mouseOver(pos.X, pos.Y, slider.width, 10) then
+                            slider.dragging = true
+                        end
+                    end
+                end))
+
+                table.insert(library.connections, UIS.InputEnded:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                        slider.dragging = false
+                    end
+                end))
+
+                table.insert(library.connections, RS.RenderStepped:Connect(function()
+                    if slider.dragging and library.open then
+                        local success, mouse = pcall(function() return UIS:GetMouseLocation() end)
+                        if success then
+                            local pos = slider.objects.trackOutline.Position
+                            local pct = math.clamp((mouse.X - pos.X) / slider.width, 0, 1)
+                            slider:Set(min + (max - min) * pct)
+                        end
+                    end
+                end))
+
+                if flag then
+                    library.flags[flag] = default
+                    library.pointers[flag] = slider
+                end
+
+                if side == "left" then
+                    section.leftOffset = section.leftOffset + 32
+                else
+                    section.rightOffset = section.rightOffset + 32
+                end
+                table.insert(elements, slider)
+                return slider
+            end
+
+            -- BUTTON
+            function section:Button(config)
+                config = config or {}
+                local buttonName = config.name or "Button"
+                local side = (config.side or "left"):lower()
+                local callback = config.callback or function() end
+
+                local elements = side == "left" and section.leftElements or section.rightElements
+                local offset = side == "left" and section.leftOffset or section.rightOffset
+                local baseX = side == "left" and (section.contentX + 10) or (section.rightX + 10)
+                local btnWidth = section.contentWidth - 20
+
+                local button = {
+                    side = side,
+                    yOffset = offset,
+                    objects = {}
+                }
+
+                button.objects.outline = create("Square", {
+                    Size = Vector2.new(btnWidth, 20),
+                    Position = window.pos + Vector2.new(baseX, section.contentY + offset),
+                    Color = t.outline,
+                    Filled = true,
+                    Visible = section.visible,
+                    ZIndex = 9
+                })
+
+                button.objects.bg = create("Square", {
+                    Size = Vector2.new(btnWidth - 2, 18),
+                    Position = window.pos + Vector2.new(baseX + 1, section.contentY + offset + 1),
+                    Color = t.elementbg,
+                    Filled = true,
+                    Visible = section.visible,
+                    ZIndex = 10
+                })
+
+                button.objects.label = create("Text", {
+                    Text = buttonName,
+                    Size = 13,
+                    Font = 2,
+                    Color = t.dimtext,
+                    Outline = true,
+                    OutlineColor = Color3.new(0, 0, 0),
+                    Center = true,
+                    Position = window.pos + Vector2.new(baseX + btnWidth/2, section.contentY + offset + 3),
+                    Visible = section.visible,
+                    ZIndex = 11
+                })
+
+                button.baseX = baseX
+                button.baseY = section.contentY + offset
+                button.width = btnWidth
+
+                function button:UpdatePositions()
+                    local p = window.pos
+                    pcall(function() button.objects.outline.Position = p + Vector2.new(button.baseX, button.baseY) end)
+                    pcall(function() button.objects.bg.Position = p + Vector2.new(button.baseX + 1, button.baseY + 1) end)
+                    pcall(function() button.objects.label.Position = p + Vector2.new(button.baseX + button.width/2, button.baseY + 3) end)
+                end
+
+                function button:SetVisible(state)
+                    for _, obj in pairs(button.objects) do
+                        pcall(function() obj.Visible = state end)
+                    end
+                end
+
+                table.insert(library.connections, UIS.InputBegan:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 and library.open and section.visible then
+                        local pos = button.objects.outline.Position
+                        if mouseOver(pos.X, pos.Y, button.width, 20) then
+                            pcall(function() button.objects.bg.Color = t.inline end)
+                            pcall(callback)
+                            task.delay(0.1, function()
+                                pcall(function() button.objects.bg.Color = t.elementbg end)
+                            end)
+                        end
+                    end
+                end))
+
+                if side == "left" then
+                    section.leftOffset = section.leftOffset + 26
+                else
+                    section.rightOffset = section.rightOffset + 26
+                end
+                table.insert(elements, button)
+                return button
+            end
+
+            -- DROPDOWN
+            function section:Dropdown(config)
+                config = config or {}
+                local dropdownName = config.name or "Dropdown"
+                local side = (config.side or "left"):lower()
+                local items = config.items or {}
+                local default = config.default or (items[1] or "")
+                local flag = config.flag
+                local callback = config.callback or function() end
+
+                local elements = side == "left" and section.leftElements or section.rightElements
+                local offset = side == "left" and section.leftOffset or section.rightOffset
+                local baseX = side == "left" and (section.contentX + 10) or (section.rightX + 10)
+                local ddWidth = section.contentWidth - 20
+
+                local dropdown = {
+                    value = default,
+                    items = items,
+                    open = false,
+                    side = side,
+                    yOffset = offset,
+                    objects = {},
+                    itemObjects = {}
+                }
+
+                dropdown.objects.label = create("Text", {
+                    Text = dropdownName,
+                    Size = 13,
+                    Font = 2,
+                    Color = t.dimtext,
+                    Outline = true,
+                    OutlineColor = Color3.new(0, 0, 0),
+                    Position = window.pos + Vector2.new(baseX, section.contentY + offset),
+                    Visible = section.visible,
+                    ZIndex = 9
+                })
+
+                dropdown.objects.outline = create("Square", {
+                    Size = Vector2.new(ddWidth, 20),
+                    Position = window.pos + Vector2.new(baseX, section.contentY + offset + 16),
+                    Color = t.outline,
+                    Filled = true,
+                    Visible = section.visible,
+                    ZIndex = 9
+                })
+
+                dropdown.objects.bg = create("Square", {
+                    Size = Vector2.new(ddWidth - 2, 18),
+                    Position = window.pos + Vector2.new(baseX + 1, section.contentY + offset + 17),
+                    Color = t.elementbg,
+                    Filled = true,
+                    Visible = section.visible,
+                    ZIndex = 10
+                })
+
+                dropdown.objects.selected = create("Text", {
+                    Text = default,
+                    Size = 13,
+                    Font = 2,
+                    Color = t.text,
+                    Outline = true,
+                    OutlineColor = Color3.new(0, 0, 0),
+                    Position = window.pos + Vector2.new(baseX + 6, section.contentY + offset + 19),
+                    Visible = section.visible,
+                    ZIndex = 11
+                })
+
+                dropdown.objects.arrow = create("Text", {
+                    Text = "-",
+                    Size = 13,
+                    Font = 2,
+                    Color = t.dimtext,
+                    Outline = true,
+                    OutlineColor = Color3.new(0, 0, 0),
+                    Position = window.pos + Vector2.new(baseX + ddWidth - 12, section.contentY + offset + 19),
+                    Visible = section.visible,
+                    ZIndex = 11
+                })
+
+                dropdown.baseX = baseX
+                dropdown.baseY = section.contentY + offset
+                dropdown.width = ddWidth
+
+                function dropdown:UpdatePositions()
+                    local p = window.pos
+                    pcall(function() dropdown.objects.label.Position = p + Vector2.new(dropdown.baseX, dropdown.baseY) end)
+                    pcall(function() dropdown.objects.outline.Position = p + Vector2.new(dropdown.baseX, dropdown.baseY + 16) end)
+                    pcall(function() dropdown.objects.bg.Position = p + Vector2.new(dropdown.baseX + 1, dropdown.baseY + 17) end)
+                    pcall(function() dropdown.objects.selected.Position = p + Vector2.new(dropdown.baseX + 6, dropdown.baseY + 19) end)
+                    pcall(function() dropdown.objects.arrow.Position = p + Vector2.new(dropdown.baseX + dropdown.width - 12, dropdown.baseY + 19) end)
+                end
+
+                function dropdown:SetVisible(state)
+                    for _, obj in pairs(dropdown.objects) do
+                        pcall(function() obj.Visible = state end)
+                    end
+                    if not state then dropdown:Close() end
+                end
+
+                function dropdown:Close()
+                    dropdown.open = false
+                    for _, obj in pairs(dropdown.itemObjects) do
+                        pcall(function() obj:Remove() end)
+                    end
+                    dropdown.itemObjects = {}
+                end
+
+                function dropdown:Open()
+                    if dropdown.open then
+                        dropdown:Close()
+                        return
+                    end
+                    dropdown.open = true
+
+                    local pos = dropdown.objects.outline.Position
+                    local listH = math.min(#items * 18 + 4, 150)
+
+                    local listBg = create("Square", {
+                        Size = Vector2.new(dropdown.width, listH),
+                        Position = Vector2.new(pos.X, pos.Y + 22),
+                        Color = t.elementbg,
+                        Filled = true,
+                        Visible = true,
+                        ZIndex = 50
+                    })
+                    table.insert(dropdown.itemObjects, listBg)
+
+                    local listOutline = create("Square", {
+                        Size = Vector2.new(dropdown.width, listH),
+                        Position = Vector2.new(pos.X, pos.Y + 22),
+                        Color = t.outline,
+                        Filled = false,
+                        Thickness = 1,
+                        Visible = true,
+                        ZIndex = 51
+                    })
+                    table.insert(dropdown.itemObjects, listOutline)
+
+                    for i, item in ipairs(items) do
+                        local itemText = create("Text", {
+                            Text = item,
+                            Size = 13,
+                            Font = 2,
+                            Color = item == dropdown.value and a or t.text,
+                            Outline = true,
+                            OutlineColor = Color3.new(0, 0, 0),
+                            Position = Vector2.new(pos.X + 6, pos.Y + 24 + (i-1) * 18),
+                            Visible = true,
+                            ZIndex = 52
+                        })
+                        table.insert(dropdown.itemObjects, itemText)
+                    end
+                end
+
+                function dropdown:Set(value)
+                    dropdown.value = value
+                    pcall(function() dropdown.objects.selected.Text = value end)
+                    if flag then library.flags[flag] = value end
+                    pcall(callback, value)
+                end
+
+                function dropdown:Get() return dropdown.value end
+
+                table.insert(library.connections, UIS.InputBegan:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 and library.open and section.visible then
+                        local pos = dropdown.objects.outline.Position
+
+                        if mouseOver(pos.X, pos.Y, dropdown.width, 20) then
+                            dropdown:Open()
+                            return
+                        end
+
+                        if dropdown.open then
+                            for i, item in ipairs(items) do
+                                local itemY = pos.Y + 22 + (i-1) * 18
+                                if mouseOver(pos.X, itemY, dropdown.width, 18) then
+                                    dropdown:Set(item)
+                                    dropdown:Close()
+                                    return
+                                end
+                            end
+                            dropdown:Close()
+                        end
+                    end
+                end))
+
+                if flag then
+                    library.flags[flag] = default
+                    library.pointers[flag] = dropdown
+                end
+                if default ~= "" then pcall(callback, default) end
+
+                if side == "left" then
+                    section.leftOffset = section.leftOffset + 42
+                else
+                    section.rightOffset = section.rightOffset + 42
+                end
+                table.insert(elements, dropdown)
+                return dropdown
+            end
+
+            -- KEYBIND
+            function section:Keybind(config)
+                config = config or {}
+                local keybindName = config.name or "Keybind"
+                local side = (config.side or "left"):lower()
+                local default = config.default or Enum.KeyCode.Unknown
+                local flag = config.flag
+                local callback = config.callback or function() end
+
+                local elements = side == "left" and section.leftElements or section.rightElements
+                local offset = side == "left" and section.leftOffset or section.rightOffset
+                local baseX = side == "left" and (section.contentX + 10) or (section.rightX + 10)
+                local kbWidth = section.contentWidth - 20
+
+                local keyNames = {
+                    [Enum.KeyCode.LeftShift] = "LS", [Enum.KeyCode.RightShift] = "RS",
+                    [Enum.KeyCode.LeftControl] = "LC", [Enum.KeyCode.RightControl] = "RC",
+                    [Enum.KeyCode.LeftAlt] = "LA", [Enum.KeyCode.RightAlt] = "RA",
+                    [Enum.UserInputType.MouseButton1] = "MB1", [Enum.UserInputType.MouseButton2] = "MB2"
+                }
+
+                local function getKeyName(key)
+                    if keyNames[key] then return keyNames[key] end
+                    if typeof(key) == "EnumItem" then return key.Name end
+                    return "-"
+                end
+
+                local keybind = {
+                    value = default,
+                    listening = false,
+                    side = side,
+                    yOffset = offset,
+                    objects = {}
+                }
+
+                keybind.objects.label = create("Text", {
+                    Text = keybindName,
+                    Size = 13,
+                    Font = 2,
+                    Color = t.dimtext,
+                    Outline = true,
+                    OutlineColor = Color3.new(0, 0, 0),
+                    Position = window.pos + Vector2.new(baseX, section.contentY + offset + 2),
+                    Visible = section.visible,
+                    ZIndex = 9
+                })
+
+                local keyText = "[" .. getKeyName(default) .. "]"
+                keybind.objects.key = create("Text", {
+                    Text = keyText,
+                    Size = 13,
+                    Font = 2,
+                    Color = t.dimtext,
+                    Outline = true,
+                    OutlineColor = Color3.new(0, 0, 0),
+                    Position = window.pos + Vector2.new(baseX + kbWidth - textBounds(keyText, 13).X, section.contentY + offset + 2),
+                    Visible = section.visible,
+                    ZIndex = 9
+                })
+
+                keybind.baseX = baseX
+                keybind.baseY = section.contentY + offset
+                keybind.width = kbWidth
+                keybind.getKeyName = getKeyName
+
+                function keybind:UpdatePositions()
+                    local p = window.pos
+                    local keyText = "[" .. keybind.getKeyName(keybind.value) .. "]"
+                    pcall(function() keybind.objects.label.Position = p + Vector2.new(keybind.baseX, keybind.baseY + 2) end)
+                    pcall(function() keybind.objects.key.Position = p + Vector2.new(keybind.baseX + keybind.width - textBounds(keyText, 13).X, keybind.baseY + 2) end)
+                end
+
+                function keybind:SetVisible(state)
+                    for _, obj in pairs(keybind.objects) do
+                        pcall(function() obj.Visible = state end)
+                    end
+                end
+
+                function keybind:Set(key)
+                    keybind.value = key
+                    local keyText = "[" .. getKeyName(key) .. "]"
+                    pcall(function() keybind.objects.key.Text = keyText end)
+                    pcall(function() keybind.objects.key.Position = window.pos + Vector2.new(keybind.baseX + keybind.width - textBounds(keyText, 13).X, keybind.baseY + 2) end)
+                    if flag then library.flags[flag] = key end
+                end
+
+                function keybind:Get() return keybind.value end
+
+                table.insert(library.connections, UIS.InputBegan:Connect(function(input)
+                    if keybind.listening then
+                        local key = input.KeyCode ~= Enum.KeyCode.Unknown and input.KeyCode or input.UserInputType
+                        if key == Enum.KeyCode.Escape then key = Enum.KeyCode.Unknown end
+                        keybind:Set(key)
+                        keybind.listening = false
+                        pcall(function() keybind.objects.key.Color = t.dimtext end)
+                        return
+                    end
+
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 and library.open and section.visible then
+                        local pos = keybind.objects.label.Position
+                        if mouseOver(pos.X, pos.Y - 2, keybind.width, 18) then
+                            keybind.listening = true
+                            pcall(function() keybind.objects.key.Color = a end)
+                        end
+                    end
+
+                    if keybind.value ~= Enum.KeyCode.Unknown then
+                        if input.KeyCode == keybind.value or input.UserInputType == keybind.value then
+                            pcall(callback, keybind.value)
+                        end
+                    end
+                end))
+
+                if flag then
+                    library.flags[flag] = default
+                    library.pointers[flag] = keybind
+                end
+
+                if side == "left" then
+                    section.leftOffset = section.leftOffset + 20
+                else
+                    section.rightOffset = section.rightOffset + 20
+                end
+                table.insert(elements, keybind)
+                return keybind
+            end
+
+            -- Section button click
+            table.insert(library.connections, UIS.InputBegan:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseButton1 and library.open and page.visible then
+                    local pos = sectionBtn.objects.text.Position
+                    if mouseOver(pos.X - 8, pos.Y - 2, 100, 18) then
+                        section:Show()
+                    end
+                end
+            end))
+
+            table.insert(page.sections, section)
+            return section
+        end
+
+        table.insert(window.pages, page)
+        return page
+    end
+
+    -- Dragging & Tab clicks
+    table.insert(library.connections, UIS.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 and library.open then
+            local pos = window.pos
+            if mouseOver(pos.X, pos.Y, sizeX, 24) then
+                window.dragging = true
+                local success, mouse = pcall(function() return UIS:GetMouseLocation() end)
+                if success then
+                    window.dragOffset = Vector2.new(mouse.X - pos.X, mouse.Y - pos.Y)
+                end
+            end
+
+            for _, page in pairs(window.pages) do
+                local tabPos = page.objects.tabText.Position
+                if mouseOver(tabPos.X - 6, tabPos.Y - 3, page.tabWidth, 20) then
+                    page:Show()
+                end
+            end
+        end
+
+        if input.KeyCode == Enum.KeyCode.RightShift then
+            window:Toggle()
+        end
+    end))
+
+    table.insert(library.connections, UIS.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            window.dragging = false
+        end
+    end))
+
+    table.insert(library.connections, RS.RenderStepped:Connect(function()
+        if window.dragging and library.open then
+            local success, mouse = pcall(function() return UIS:GetMouseLocation() end)
+            if success then
+                window.pos = Vector2.new(mouse.X - window.dragOffset.X, mouse.Y - window.dragOffset.Y)
+                window:UpdatePositions()
             end
         end
     end))
 
-    if textbox.Flag then
-        NexusLib.Flags[textbox.Flag] = textbox.Value
-    end
-
-    self.CurrentY = self.CurrentY + (hasLabel and 45 or 28)
-    self:UpdateSize()
-    table.insert(self.Elements, textbox)
-    return textbox
-end
-
--- Label Element
-function Section:Label(options)
-    options = options or {}
-
-    local label = {
-        Type = "Label",
-        Section = self,
-        Text = options.text or "Label",
-        Objects = {},
-        Visible = self.Visible
-    }
-
-    local win = self.Window
-    local y = self.CurrentY
-    local x = self.StartX + 8
-
-    label.Objects.Text = Create("Text", {
-        Text = label.Text,
-        Size = 13,
-        Font = 2,
-        Position = Vector2.new(x, y),
-        Color = win.Theme.TextDim,
-        Outline = true,
-        OutlineColor = Color3.new(0, 0, 0),
-        Visible = self.Visible,
-        ZIndex = 11
-    })
-
-    function label:Set(text)
-        self.Text = text
-        self.Objects.Text.Text = text
-    end
-
-    function label:SetVisible(visible)
-        self.Visible = visible
-        self.Objects.Text.Visible = visible
-    end
-
-    function label:UpdatePosition(delta)
-        self.Objects.Text.Position = self.Objects.Text.Position + delta
-    end
-
-    function label:Destroy()
-        self.Objects.Text:Remove()
-    end
-
-    self.CurrentY = self.CurrentY + 18
-    self:UpdateSize()
-    table.insert(self.Elements, label)
-    return label
-end
-
--- ColorPicker Element
-function Section:ColorPicker(options)
-    options = options or {}
-
-    local colorpicker = {
-        Type = "ColorPicker",
-        Section = self,
-        Name = options.name or "Color",
-        Value = options.default or Color3.fromRGB(255, 255, 255),
-        Flag = options.flag,
-        Callback = options.callback or function() end,
-        Objects = {},
-        Visible = self.Visible,
-        Open = false
-    }
-
-    local win = self.Window
-    local y = self.CurrentY
-    local x = self.StartX + 8
-    local width = self.Width - 16
-
-    colorpicker.Objects.Label = Create("Text", {
-        Text = colorpicker.Name,
-        Size = 13,
-        Font = 2,
-        Position = Vector2.new(x, y),
-        Color = win.Theme.Text,
-        Outline = true,
-        OutlineColor = Color3.new(0, 0, 0),
-        Visible = self.Visible,
-        ZIndex = 11
-    })
-
-    colorpicker.Objects.Preview = Create("Square", {
-        Size = Vector2.new(25, 14),
-        Position = Vector2.new(x + width - 30, y - 1),
-        Color = colorpicker.Value,
-        Filled = true,
-        Visible = self.Visible,
-        ZIndex = 11
-    })
-
-    colorpicker.Objects.PreviewOutline = Create("Square", {
-        Size = Vector2.new(25, 14),
-        Position = Vector2.new(x + width - 30, y - 1),
-        Color = win.Theme.ElementBorder,
-        Filled = false,
-        Thickness = 1,
-        Visible = self.Visible,
-        ZIndex = 12
-    })
-
-    function colorpicker:Set(color)
-        self.Value = color
-        self.Objects.Preview.Color = color
-        if self.Flag then
-            NexusLib.Flags[self.Flag] = color
-        end
-        self.Callback(color)
-    end
-
-    function colorpicker:SetVisible(visible)
-        self.Visible = visible
-        for _, obj in pairs(self.Objects) do
-            obj.Visible = visible
+    function window:Init()
+        if window.pages[1] then
+            window.pages[1]:Show()
         end
     end
 
-    function colorpicker:UpdatePosition(delta)
-        for _, obj in pairs(self.Objects) do
-            if obj.Position then
-                obj.Position = obj.Position + delta
-            end
+    function window:Unload()
+        for _, conn in pairs(library.connections) do
+            pcall(function() conn:Disconnect() end)
         end
-    end
-
-    function colorpicker:Destroy()
-        for _, obj in pairs(self.Objects) do
-            obj:Remove()
+        for _, obj in pairs(library.drawings) do
+            pcall(function() obj:Remove() end)
         end
+        library.drawings = {}
+        library.connections = {}
     end
 
-    if colorpicker.Flag then
-        NexusLib.Flags[colorpicker.Flag] = colorpicker.Value
-    end
-
-    self.CurrentY = self.CurrentY + 20
-    self:UpdateSize()
-    table.insert(self.Elements, colorpicker)
-    return colorpicker
+    return window
 end
 
--- Separator Element
-function Section:Separator()
-    local sep = {
-        Type = "Separator",
-        Section = self,
-        Objects = {},
-        Visible = self.Visible
-    }
-
-    local win = self.Window
-    local y = self.CurrentY + 5
-    local x = self.StartX + 8
-    local width = self.Width - 16
-
-    sep.Objects.Line = Create("Line", {
-        From = Vector2.new(x, y),
-        To = Vector2.new(x + width, y),
-        Color = win.Theme.SectionBorder,
-        Thickness = 1,
-        Visible = self.Visible,
-        ZIndex = 11
-    })
-
-    function sep:SetVisible(visible)
-        self.Visible = visible
-        self.Objects.Line.Visible = visible
-    end
-
-    function sep:UpdatePosition(delta)
-        self.Objects.Line.From = self.Objects.Line.From + delta
-        self.Objects.Line.To = self.Objects.Line.To + delta
-    end
-
-    function sep:Destroy()
-        self.Objects.Line:Remove()
-    end
-
-    self.CurrentY = self.CurrentY + 12
-    self:UpdateSize()
-    table.insert(self.Elements, sep)
-    return sep
-end
-
--- Initialize
-function NexusLib:Init()
-    if self.CurrentPage then
-        self:SelectPage(self.CurrentPage)
-    elseif #self.Pages > 0 then
-        self:SelectPage(self.Pages[1])
-    end
-    return self
-end
-
-return NexusLib
+return library
